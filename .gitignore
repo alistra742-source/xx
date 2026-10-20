@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+models/
+*.gguf
+*.mp4
+*.webm
+tmp/
+stick-videos/
+work-*/
+*.log
+.DS_Store
