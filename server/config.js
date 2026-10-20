@@ -25,7 +25,7 @@ export function loadConfig(env = process.env) {
     // GROQ_API alone is enough: it selects Groq's OpenAI-compatible endpoint.
     llamaUrl: env.LLM_BASE_URL || env.LLAMA_URL || (groqKey ? 'https://api.groq.com/openai/v1' : ''),
     llmApiKey: env.LLM_API_KEY || groqKey || '',
-    llmModel: env.LLM_MODEL || 'llama-3.1-8b-instant',
+    llmModel: env.LLM_MODEL || 'openai/gpt-oss-20b',
     llmTimeoutMs: num(env.LLM_TIMEOUT_MS, 45000),
     llmCooldownMs: num(env.LLM_COOLDOWN_MS, 120000),
     llmMaxTokens: bounded(env.LLM_MAX_TOKENS, 6000, 1024, 8192),

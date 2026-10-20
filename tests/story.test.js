@@ -163,7 +163,7 @@ test('rate limit honors cooldown without repeated requests; diagnostic recovery 
   const llm = createLlm(config({ llmApiKey: 'secret' }));
   await mockFetch(async (_, init) => {
     calls++;
-    if (init.method === 'GET') return response({ data: [{ id: 'llama-3.1-8b-instant' }] });
+    if (init.method === 'GET') return response({ data: [{ id: 'openai/gpt-oss-20b' }] });
     return response({}, { ok: false, status: 429, headers: { get: () => '5' } });
   }, async () => {
     await assert.rejects(llm.generateScript(req()), (error) => error.code === 'LLM_RATE_LIMIT' && error.retryAfterMs === 5000);

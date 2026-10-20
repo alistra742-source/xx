@@ -7,6 +7,7 @@ import {
   ANIMATION_STYLES, ASPECT_RATIOS, SUBTITLE_POSITIONS, LIMITS, DEFAULT_SUBTITLES,
   CHARACTER_COLORS, DRIP_COLORS, HATS, TOPS, ACCESSORIES, ZOMBIE_COLOR,
 } from './constants.js';
+import { normalizeScenery } from './scenery.js';
 
 export class ValidationError extends Error {
   constructor(message, field) {
@@ -243,6 +244,8 @@ function normalizeScene(raw, index, characters, warnings) {
     id: `s${index + 1}`,
     duration: clamp(num(scene.duration, 5), LIMITS.minSceneSeconds, LIMITS.maxSceneSeconds),
     background: normalizeBackground(scene.background),
+    // AI-drawn setting; when present the renderer draws it instead of the named background.
+    scenery: normalizeScenery(scene.scenery),
     narration: str(scene.narration, LIMITS.maxNarrationChars, ''),
     characters: chars,
     effects,

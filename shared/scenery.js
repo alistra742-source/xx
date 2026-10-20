@@ -34,6 +34,100 @@ function rect(ctx, color, x, y, w, h) {
   ctx.fillRect(x, y, w, h);
 }
 
+// ---- AI-drawn scenery ----
+// The language model describes a setting as sky/ground colours plus a short list
+// of vector shapes in 0-1 coordinates (x across the frame, y down from the top).
+// normalizeScenery clamps everything, so any model output is safe to draw.
+const SHAPE_TYPES = ['rect', 'ellipse', 'poly', 'line'];
+const MAX_SHAPES = 30;
+const MAX_POINTS = 12;
+
+const hexColor = (v) => (typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v) ? v : null);
+const unit = (v, fallback) => {
+  if (v === null || v === undefined || v === '') return fallback;
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : fallback;
+};
+
+function luminance(hex) {
+  const n = Number.parseInt(hex.slice(1), 16);
+  return (0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) / 255;
+}
+
+function normalizeShape(s) {
+  if (!s || typeof s !== 'object' || !SHAPE_TYPES.includes(s.type)) return null;
+  const color = hexColor(s.color);
+  if (!color) return null;
+  const base = { type: s.type, color, alpha: unit(s.alpha, 1) };
+  if (s.type === 'rect') {
+    const x = unit(s.x, null), y = unit(s.y, null), w = unit(s.w, null), h = unit(s.h, null);
+    return [x, y, w, h].includes(null) ? null : { ...base, x, y, w, h };
+  }
+  if (s.type === 'ellipse') {
+    const cx = unit(s.cx, null), cy = unit(s.cy, null), rx = unit(s.rx, null), ry = unit(s.ry, null);
+    return [cx, cy, rx, ry].includes(null) ? null : { ...base, cx, cy, rx, ry };
+  }
+  const points = (Array.isArray(s.points) ? s.points : []).slice(0, MAX_POINTS)
+    .map((p) => (Array.isArray(p) ? [unit(p[0], null), unit(p[1], null)] : null))
+    .filter((p) => p && p[0] !== null && p[1] !== null);
+  if (points.length < (s.type === 'poly' ? 3 : 2)) return null;
+  return { ...base, points, width: unit(s.width, 0.006) };
+}
+
+/** Validate an AI-written scenery spec. Returns null when it is unusable (the named background is used instead). */
+export function normalizeScenery(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const sky = (Array.isArray(raw.sky) ? raw.sky : []).map(hexColor).filter(Boolean);
+  const ground = hexColor(raw.ground);
+  if (sky.length === 0 || !ground) return null;
+  const skyColors = [sky[0], sky[sky.length - 1]];
+  const horizon = unit(raw.horizon, 0.8);
+  const shapes = (Array.isArray(raw.shapes) ? raw.shapes : []).slice(0, MAX_SHAPES).map(normalizeShape).filter(Boolean);
+  const avgLum = [...skyColors, ground].reduce((sum, c) => sum + luminance(c), 0) / 3;
+  return {
+    sky: skyColors,
+    ground,
+    horizon: Math.min(0.92, Math.max(0.55, horizon)),
+    dark: avgLum < 0.5,
+    shapes,
+  };
+}
+
+function drawShape(ctx, s, W, H) {
+  ctx.save();
+  ctx.globalAlpha = s.alpha;
+  ctx.fillStyle = s.color;
+  ctx.strokeStyle = s.color;
+  ctx.beginPath();
+  if (s.type === 'rect') {
+    ctx.rect(s.x * W, s.y * H, s.w * W, s.h * H);
+    ctx.fill();
+  } else if (s.type === 'ellipse') {
+    ctx.ellipse(s.cx * W, s.cy * H, Math.max(1, s.rx * W), Math.max(1, s.ry * H), 0, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (s.type === 'poly') {
+    s.points.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x * W, y * H) : ctx.lineTo(x * W, y * H)));
+    ctx.closePath();
+    ctx.fill();
+  } else {
+    s.points.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x * W, y * H) : ctx.lineTo(x * W, y * H)));
+    ctx.lineWidth = Math.max(1, s.width * H);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/** Draw a normalized AI scenery spec filling W x H (sky gradient, ground, then shapes in order). */
+export function drawScenery(ctx, spec, W, H) {
+  const groundY = H * spec.horizon;
+  const sky = vGrad(ctx, 0, groundY, [[0, spec.sky[0]], [1, spec.sky[1]]]);
+  rect(ctx, sky, 0, 0, W, groundY);
+  rect(ctx, spec.ground, 0, groundY, W, H - groundY);
+  spec.shapes.forEach((s) => drawShape(ctx, s, W, H));
+}
+
 function roundRect(ctx, color, x, y, w, h, r = 6) {
   ctx.fillStyle = color;
   ctx.beginPath();

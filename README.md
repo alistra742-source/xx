@@ -44,7 +44,7 @@ The app does not automatically load `.env`. For local file-based variables, copy
 | `GROQ_API`, `GROQ_API_KEY` | Groq credential aliases; either selects Groq automatically |
 | `LLM_BASE_URL`, `LLM_API_KEY` | Explicit OpenAI-compatible provider override |
 | `LLAMA_URL` | Optional self-hosted compatible endpoint when LLM_BASE_URL is empty |
-| `LLM_MODEL` | `llama-3.1-8b-instant` |
+| `LLM_MODEL` | `openai/gpt-oss-20b` |
 | `LLM_ENABLED` | `true`; false disables generation rather than enabling stock plots |
 | `LLM_TIMEOUT_MS`, `LLM_COOLDOWN_MS`, `LLM_MAX_TOKENS` | Request deadline, transient-error cooldown, storyboard output budget |
 | `ELEVENLABS_API`, `ELEVENLABS_API_KEY` | Neural speech credential aliases |

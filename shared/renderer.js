@@ -3,7 +3,7 @@
 // (hats, hoodies, suits, shades, chains, headphones, weapons), zombie green infection
 // transformations, props, and dynamic effects.
 import { solvePose, buildSkeleton } from './stickfigure.js';
-import { drawBackground, drawTint, BACKGROUND_INFO, bedroomLayout } from './scenery.js';
+import { drawBackground, drawScenery, drawTint, BACKGROUND_INFO, bedroomLayout } from './scenery.js';
 import { ZOMBIE_COLOR, ZOMBIE_GLOW } from './constants.js';
 
 const TWO_PI = Math.PI * 2;
@@ -934,7 +934,9 @@ export function renderFrame(ctx, scene, t, opts) {
   const dur = Math.max(0.001, scene.duration);
   const local = Math.max(0, Math.min(t, dur));
   const progress = local / dur;
-  const bgInfo = BACKGROUND_INFO[scene.background] ?? BACKGROUND_INFO.street;
+  const bgInfo = scene.scenery
+    ? { dark: scene.scenery.dark, ground: scene.scenery.horizon }
+    : (BACKGROUND_INFO[scene.background] ?? BACKGROUND_INFO.street);
   const dark = !!bgInfo.dark;
   const defaultInk = dark ? '#f8fafc' : '#0f172a';
   const L = layoutFor(W, H, scene.characters.length);
@@ -1057,7 +1059,8 @@ export function renderFrame(ctx, scene, t, opts) {
   ctx.translate(camera.x + shakeX, camera.y + shakeY);
   ctx.scale(camera.zoom, camera.zoom);
   // Background and actors share the same transform, preserving prop alignment.
-  drawBackground(ctx, scene.background, W, H, local);
+  if (scene.scenery) drawScenery(ctx, scene.scenery, W, H);
+  else drawBackground(ctx, scene.background, W, H, local);
   if (effects.includes('night')) drawTint(ctx, W, H, 'rgba(8,15,45,0.32)');
   if (effects.includes('day')) drawTint(ctx, W, H, 'rgba(255,230,160,0.08)');
   if (effects.includes('alarm_flash')) drawTint(ctx, W, H, `rgba(220,38,38,${0.14 + 0.14 * Math.sin(local * 9)})`);

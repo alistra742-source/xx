@@ -9,6 +9,60 @@ import { createTts } from '../server/tts.js';
 import { improvePromptLocally, createLlm } from '../server/script/llm.js';
 import { createJobs } from '../server/jobs.js';
 import { loadConfig } from '../server/config.js';
+import { normalizeScenery, drawScenery } from '../shared/scenery.js';
+import { renderFrame } from '../shared/renderer.js';
+
+describe('AI-drawn scenery', () => {
+  const goodSpec = {
+    sky: ['#102040', '#3060a0'],
+    ground: '#305020',
+    horizon: 0.8,
+    shapes: [
+      { type: 'rect', x: 0.1, y: 0.2, w: 0.2, h: 0.4, color: '#808080' },
+      { type: 'ellipse', cx: 0.7, cy: 0.3, rx: 0.1, ry: 0.05, color: '#ffffff', alpha: 0.5 },
+      { type: 'poly', points: [[0, 0.8], [0.3, 0.5], [0.6, 0.8]], color: '#202020' },
+      { type: 'line', points: [[0, 0.9], [1, 0.9]], color: '#ff0000', width: 0.01 },
+      { type: 'blob', color: '#000000' },
+      { type: 'rect', x: 0.1, y: 0.1, w: 0.1, h: 0.1, color: 'red' },
+    ],
+  };
+
+  test('keeps valid shapes and drops unusable ones', () => {
+    const s = normalizeScenery(goodSpec);
+    assert.equal(s.shapes.length, 4);
+    assert.equal(s.dark, true);
+    assert.equal(s.horizon, 0.8);
+  });
+
+  test('clamps coordinates and horizon, rejects bad colors', () => {
+    const s = normalizeScenery({ ...goodSpec, horizon: 5, sky: ['#ffffff'], ground: 'nope' });
+    assert.equal(s, null);
+    const t = normalizeScenery({ ...goodSpec, horizon: 5, shapes: [{ type: 'rect', x: -3, y: 9, w: 0.5, h: 0.5, color: '#ffffff' }] });
+    assert.equal(t.horizon, 0.92);
+    assert.deepEqual([t.shapes[0].x, t.shapes[0].y], [0, 1]);
+  });
+
+  test('schema keeps the scenery on each scene and falls back when absent', () => {
+    const p = normalizeProject({ duration: 10, scenes: [{ background: 'lab', scenery: goodSpec, characters: [{ action: 'walk' }] }, { characters: [{ action: 'walk' }] }] });
+    assert.ok(p.scenes[0].scenery);
+    assert.equal(p.scenes[1].scenery, null);
+  });
+
+  test('drawScenery paints sky, ground and every shape', () => {
+    const calls = [];
+    const rec = (name) => (...args) => calls.push([name, ...args]);
+    const ctx = {
+      createLinearGradient: () => ({ addColorStop() {} }),
+      save() {}, restore() {}, beginPath() {}, closePath() {}, fill() {}, stroke() {},
+      moveTo: rec('moveTo'), lineTo: rec('lineTo'), rect: rec('rect'), ellipse: rec('ellipse'),
+      fillRect: rec('fillRect'),
+    };
+    drawScenery(ctx, normalizeScenery(goodSpec), 320, 180);
+    assert.deepEqual(calls.find((c) => c[0] === 'fillRect')?.slice(1), [0, 0, 320, 144]);
+    assert.ok(calls.some((c) => c[0] === 'ellipse'));
+    assert.ok(calls.some((c) => c[0] === 'lineTo'));
+  });
+});
 
 describe('schema', () => {
   test('maps unknown actions and backgrounds to safe defaults', () => {
@@ -242,7 +296,7 @@ test('GROQ_API alone selects Groq and the fastest small model', () => {
   const config = loadConfig({ GROQ_API: 'gsk-test' });
   assert.equal(config.llamaUrl, 'https://api.groq.com/openai/v1');
   assert.equal(config.llmApiKey, 'gsk-test');
-  assert.equal(config.llmModel, 'llama-3.1-8b-instant');
+  assert.equal(config.llmModel, 'openai/gpt-oss-20b');
   const explicit = loadConfig({ GROQ_API: 'gsk-test', LLM_BASE_URL: 'https://example.test/v1', LLM_API_KEY: 'k' });
   assert.equal(explicit.llamaUrl, 'https://example.test/v1');
   assert.equal(explicit.llmApiKey, 'k');
