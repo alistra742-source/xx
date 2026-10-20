@@ -18,8 +18,9 @@ export function loadConfig(env = process.env) {
     // /v1/chat/completions endpoint works: a hosted API (Groq, OpenRouter, ...)
     // via LLM_BASE_URL + LLM_API_KEY, or a self-hosted llama-server via LLAMA_URL.
     llmEnabled: env.LLM_ENABLED !== 'false',
-    llamaUrl: env.LLM_BASE_URL || env.LLAMA_URL || '',
-    llmApiKey: env.LLM_API_KEY || '',
+    // GROQ_API alone is enough: it selects Groq's OpenAI-compatible endpoint.
+    llamaUrl: env.LLM_BASE_URL || env.LLAMA_URL || (env.GROQ_API ? 'https://api.groq.com/openai/v1' : ''),
+    llmApiKey: env.LLM_API_KEY || env.GROQ_API || '',
     llmModel: env.LLM_MODEL || 'llama-3.1-8b-instant',
     llmTimeoutMs: num(env.LLM_TIMEOUT_MS, 45000),
     llmCooldownMs: num(env.LLM_COOLDOWN_MS, 120000),

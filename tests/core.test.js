@@ -8,6 +8,7 @@ import { templateProject, extractSubject, settingFromTopic } from '../server/scr
 import { createTts } from '../server/tts.js';
 import { improvePromptLocally, createLlm } from '../server/script/llm.js';
 import { createJobs } from '../server/jobs.js';
+import { loadConfig } from '../server/config.js';
 
 describe('schema', () => {
   test('maps unknown actions and backgrounds to safe defaults', () => {
@@ -234,6 +235,16 @@ test('LLM script request sends the key, model, and a per-request variation id', 
   } finally {
     globalThis.fetch = realFetch;
   }
+});
+
+test('GROQ_API alone selects Groq and the fastest small model', () => {
+  const config = loadConfig({ GROQ_API: 'gsk-test' });
+  assert.equal(config.llamaUrl, 'https://api.groq.com/openai/v1');
+  assert.equal(config.llmApiKey, 'gsk-test');
+  assert.equal(config.llmModel, 'llama-3.1-8b-instant');
+  const explicit = loadConfig({ GROQ_API: 'gsk-test', LLM_BASE_URL: 'https://example.test/v1', LLM_API_KEY: 'k' });
+  assert.equal(explicit.llamaUrl, 'https://example.test/v1');
+  assert.equal(explicit.llmApiKey, 'k');
 });
 
 test('prompt improvement works without a language model (no LLAMA_URL)', () => {
