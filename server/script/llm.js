@@ -20,8 +20,10 @@ export function createLlm(config) {
       `Story subject (not a script prompt): ${extractSubject(req.topic)}`,
       `Language for narration: ${req.language}. Tone: ${req.autoTone ? 'choose the best tone for the story' : req.tone}. Duration: ${req.duration} seconds.`,
       `Choose the appropriate cast size from 2 to 8 characters; do not be limited to a fixed cast. Give each character a distinctive name, role, color, drip outfit (hat/top/accessory), and isZombie boolean.`,
-      `This is a cinematic faceless story. Narration must describe story events as a narrator; NEVER say "create a video", "make an animation", or read the topic verbatim.`,
-      `If the topic is a zombie/virus/apocalypse story, follow a coherent outbreak arc: an ordinary survivor sleeps at night; alarms wake him; he turns on the TV and hears an emergency broadcast; he looks out a window and sees green zombies chasing normal people; show a zombie chase and a bite/infection transformation; the survivor barricades or escapes. Make each scene have distinct actions and dialogue/narration.`,
+      `This is a cinematic faceless story for a broad short-video channel. Interpret the exact premise and genre of this topic; do not force it into zombies, heists, or another unrelated template. Build a beginning, escalation, decisive climax and satisfying payoff that specifically develops the user's idea.`,
+      `Vary the opening approach based on this topic: use an in-medias-res action, a striking reveal, an ominous detail, a surprising message, or another fitting hook. Do not default to a sleeping hero, 3 AM, alarms, bedroom, or TV unless explicitly requested.`,
+      `Never narrate the user's instructions or repeat the prompt. Describe concrete story events in natural voiceover. Every scene must have distinct, visually playable actions and a different story beat.`,
+      `When the premise is genuinely a zombie/virus/apocalypse story, use a coherent outbreak arc, but only then.`,
       `Every scene MUST explicitly list all visible characters from the top-level cast that are relevant in that scene. Zombie entities must have id/name/role identifying them as zombies, isZombie:true, zombie-green color, and actions zombie_walk/zombie_chase/infect/turn_zombie. Humans must use human actions and normal colors; infected victims may switch to isZombie:true only after the bite scene. Do not use zombie IDs for humans.`,
       `Write exactly ${n} scenes. Scene 1 is a strong cinematic hook. Last scene is a satisfying ending. Each scene changes something; use 2-5 short sentences of plot progression.`,
       `Allowed actions: ${ACTIONS.join(', ')}.`,
@@ -29,10 +31,44 @@ export function createLlm(config) {
       `Allowed effects: ${EFFECTS.join(', ')}.`,
       `Allowed emotions: ${EMOTIONS.join(', ')}.`,
       `Allowed tones: ${TONES.join(', ')}. Allowed hats: ${HATS.join(', ')}. Allowed tops: ${TOPS.join(', ')}. Allowed accessories: ${ACCESSORIES.join(', ')}.`,
-      `Narration must be original voiceover narration, never the user's prompt read back, and should describe only the scene's actual story beat. Max 24 words per scene. Narration enabled: ${req.narration}.`,
+      `Narration must be original voiceover narration, never prompt instructions, and should describe only the scene's actual story beat. Max 30 words per scene. Narration enabled: ${req.narration}.`,
       'JSON shape: {"title": string, "tone": one of allowed tones, "characters": [{"id":string,"name":string,"role":string,"color":"#rrggbb","isZombie":boolean,"drip":{"hat":string,"top":string,"accessory":string,"outfitColor":"#rrggbb","accentColor":"#rrggbb"}}], "scenes": [{"duration":number,"background":string,"narration":string,"effects":[string],"textOverlay":string,"characters":[{"id":string,"action":string,"emotion":string,"isZombie":boolean,"position":{"x":number 0-1,"y":number 0-1},"targetX":number 0-1}]}]}',
     ].join('\n');
     return [{ role: 'system', content: system }, { role: 'user', content: user }];
+  }
+
+  async function improvePrompt(topic, { duration = 30 } = {}) {
+    if (!enabled()) throw new Error('Prompt improvement needs a configured local language model (LLAMA_URL).');
+    const controller = new AbortController();
+    const timeoutMs = Math.min(config.llmTimeoutMs || 45000, 30000);
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch(`${config.llamaUrl.replace(/\/$/, '')}/v1/chat/completions`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          messages: [
+            { role: 'system', content: 'You are a short-form film story editor. Expand an idea into one vivid, production-ready faceless-animation prompt. Return only the improved prompt, no labels or commentary.' },
+            { role: 'user', content: `Improve this idea for a roughly ${Math.max(10, Math.min(90, Number(duration) || 30))}-second faceless animated short. Keep the original premise and genre; do not force zombies or a default bedroom/alarm opening. Add a protagonist goal, specific setting and stakes, escalating obstacle, visual action, and satisfying twist or payoff. Aim for 80-130 words. Preserve names and facts the user supplied. Idea: ${String(topic).slice(0, 600)}` },
+          ],
+          max_tokens: Math.min(config.llmMaxTokens || 500, 320),
+          temperature: 0.8,
+          top_p: 0.92,
+          stream: false,
+        }),
+        signal: controller.signal,
+      });
+      if (!res.ok) throw new Error(`Language model responded ${res.status}`);
+      const body = await res.json();
+      const improved = String(body?.choices?.[0]?.message?.content || '').trim().replace(/^```(?:text)?\s*|\s*```$/gi, '').replace(/^Improved prompt:\s*/i, '').trim();
+      if (improved.length < 40) throw new Error('Language model returned an incomplete prompt.');
+      return improved.slice(0, 600).trim();
+    } catch (err) {
+      const reason = err.name === 'AbortError' ? `timed out after ${timeoutMs} ms` : err.message;
+      throw new Error(`Prompt improvement failed: ${reason}`);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   /**
@@ -83,7 +119,7 @@ export function createLlm(config) {
     }
   }
 
-  return { generateScript, enabled, status: () => ({ enabled: enabled(), cooldownUntil, lastError }) };
+  return { generateScript, improvePrompt, enabled, status: () => ({ enabled: enabled(), cooldownUntil, lastError }) };
 }
 
 function promptEcho(narration, topic) {

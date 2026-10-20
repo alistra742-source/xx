@@ -87,9 +87,9 @@ export function defaultDripFor(id, role = '', index = 0, seedStr = '') {
       isZombie: true,
     };
   }
-  const hats = ['cap', 'backwards_cap', 'beanie', 'hood_up', 'crown', 'headband', 'bandana', 'top_hat', 'none'];
-  const tops = ['hoodie', 'puff_jacket', 'suit', 'tracksuit', 'tshirt', 'vest', 'tactical', 'lab_coat'];
-  const accs = ['shades', 'chain', 'headphones', 'scarf', 'backpack', 'glasses', 'katana', 'none'];
+  const hats = ['none', 'none', 'none', 'cap', 'beanie', 'hood_up', 'headband', 'bandana'];
+  const tops = ['tshirt', 'tshirt', 'hoodie', 'puff_jacket', 'vest', 'tracksuit', 'tactical'];
+  const accs = ['none', 'none', 'none', 'scarf', 'backpack', 'glasses', 'headphones'];
   return {
     hat: hats[h % hats.length],
     top: tops[(h >>> 4) % tops.length],

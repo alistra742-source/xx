@@ -51,7 +51,13 @@ function checkFfmpeg(bin) {
 export async function createApp(overrides = {}) {
   const config = { ...loadConfig(), ...overrides };
   const ffmpegOk = await checkFfmpeg(config.ffmpegBin);
-  const tts = await createTts(config);
+  let tts;
+  try {
+    tts = await createTts(config);
+  } catch (err) {
+    console.error('[tts config]', err.message);
+    tts = { name: 'unavailable', enabled: false, synth: async () => null, error: err.message };
+  }
   const llm = createLlm(config);
   const generateScript = createScriptService({ llm });
   const jobs = createJobs({ maxQueue: config.maxQueue, ttlMs: config.jobTtlMs });
@@ -81,7 +87,7 @@ export async function createApp(overrides = {}) {
     }
 
     if (req.method === 'POST' && path === '/api/voice') {
-      if (!tts.enabled) throw new HttpError(503, 'Voice narration is unavailable. Configure espeak-ng or another TTS provider.');
+      if (!tts.enabled) throw new HttpError(503, tts.error || 'Voice narration is unavailable. Configure espeak-ng or another TTS provider.');
       const body = await readJson(req);
       const text = typeof body.text === 'string' ? body.text.trim().slice(0, LIMITS.maxNarrationChars) : '';
       const language = typeof body.language === 'string' ? body.language.slice(0, 40) : 'English';
@@ -106,6 +112,15 @@ export async function createApp(overrides = {}) {
       const input = validateGenerateRequest(await readJson(req));
       const result = await generateScript(input);
       return send(res, 200, result);
+    }
+
+    if (req.method === 'POST' && path === '/api/improve-prompt') {
+      const body = await readJson(req);
+      const topic = typeof body.topic === 'string' ? body.topic.trim().slice(0, LIMITS.maxTopicChars) : '';
+      if (topic.length < 3) throw new HttpError(400, 'Enter a topic before improving the prompt.');
+      if (!config.llamaUrl || !config.llmEnabled) throw new HttpError(503, 'Prompt improvement needs a configured language model (LLAMA_URL). The story templates will still interpret prompts locally.');
+      const improved = await llm.improvePrompt(topic, { duration: body.duration });
+      return send(res, 200, { prompt: improved, source: 'llm' });
     }
 
     if (req.method === 'POST' && path === '/api/exports') {

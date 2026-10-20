@@ -60,7 +60,10 @@ End-to-end check against a running server: `npm run e2e:export`. It generates a 
 | `LLM_TIMEOUT_MS` | `45000` | Per-request timeout for the model |
 | `LLM_COOLDOWN_MS` | `120000` | After a failure, skip the model for this long |
 | `LLM_MAX_TOKENS` | `900` | Output token cap |
-| `TTS_PROVIDER` | `auto` | `auto` (local espeak then free online fallback), `espeak`, `gtts`, `http`, or `none` |
+| `TTS_PROVIDER` | `auto` | `auto` (ElevenLabs neural voice when `ELEVENLABS_API` is set, otherwise local espeak, then free online fallback), `elevenlabs`, `espeak`, `gtts`, `http`, or `none` |
+| `ELEVENLABS_API` | empty | ElevenLabs API key. Set it in Railway variables only; never commit it |
+| `ELEVENLABS_VOICE_ID` | built-in male voice | Optional ElevenLabs voice ID to use instead |
+| `ELEVENLABS_MODEL_ID` | `eleven_multilingual_v2` | ElevenLabs TTS model |
 | `ESPEAK_BIN` | `espeak-ng` | Used when `TTS_PROVIDER=espeak` |
 | `TTS_URL` | empty | Used when `TTS_PROVIDER=http`: POSTs `{text, language}`, expects `audio/wav` |
 | `TTS_TIMEOUT_MS` | `30000` | TTS request timeout |

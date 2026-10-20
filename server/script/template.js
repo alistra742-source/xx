@@ -47,6 +47,28 @@ function pick(list, rng) {
   return list[Math.floor(rng() * list.length)];
 }
 
+function remixOpening(beats, rng, subject, heroName) {
+  const opening = pick([
+    { background: 'city', textOverlay: 'THE FIRST WARNING', effects: ['night', 'zoom'], action: 'look_window', emotion: 'confused', line: `Everyone missed the first warning about ${subject}. ${heroName} did not.` },
+    { background: 'street', textOverlay: 'NO TURNING BACK', effects: ['rain', 'motion_lines'], action: 'run', emotion: 'scared', line: `${heroName} was already running when the truth about ${subject} finally hit.` },
+    { background: 'bedroom', textOverlay: '3:07 AM', effects: ['night', 'tv_glow'], action: 'phone_scroll', emotion: 'surprised', line: `At 3:07 AM, one message about ${subject} changed everything for ${heroName}.` },
+    { background: 'rooftop', textOverlay: 'AFTER THE FALL', effects: ['night', 'vignette'], action: 'look_right', emotion: 'determined', line: `By sunrise, ${heroName} would understand what ${subject} had cost. This was the moment it began.` },
+    { background: 'office', textOverlay: 'THE WRONG DOOR', effects: ['zoom', 'alarm_flash'], action: 'sneak', emotion: 'scared', line: `${heroName} pushed open the wrong door, and ${subject} was waiting on the other side.` },
+  ], rng);
+  const [first, ...rest] = beats;
+  const lead = first?.characters?.[0];
+  if (!first || !lead) return beats;
+  const { targetX: _targetX, ...leadWithoutTarget } = lead;
+  return [{
+    ...first,
+    background: opening.background,
+    textOverlay: opening.textOverlay,
+    effects: opening.effects,
+    narration: opening.line,
+    characters: [{ ...leadWithoutTarget, action: opening.action, emotion: opening.emotion, position: { x: 0.38, y: 0.81 }, facing: 1 }, ...first.characters.slice(1)],
+  }, ...rest];
+}
+
 /**
  * Build a full zombie outbreak story:
  * sleep -> wake up to sirens -> turn on TV news warning -> look out window at green zombies ->
@@ -262,7 +284,11 @@ function buildZombieStory(req, rng, count) {
   // TV warning -> window reveal -> chase + visible infection -> barricade -> escape.
   // The chase and bite play as simultaneous action in one animated street scene.
   const compactBeats = [wakeUp, storyBeats[2], storyBeats[3], outbreakScene, storyBeats[6], finalEscape];
-  const selected = selectScenesForCount(compactBeats, count);
+  const selected = selectScenesForCount(compactBeats, count, rng, extractSubject(req.topic));
+  // Keep the user's own opening when the prompt describes one (waking to alarms at 3 AM);
+  // otherwise vary the hook so repeated runs don't open identically.
+  const userSpecifiesOpening = /\b(wake|woke|waking|alarm|asleep|sleep|bed|3\s?am|2\s?am)\b/i.test(req.topic || '');
+  const opened = userSpecifiesOpening ? selected : remixOpening(selected, rng, extractSubject(req.topic), heroName);
   const titles = [
     '3:14 AM: The Green Outbreak',
     'Don’t Look Out The Window',
@@ -274,9 +300,9 @@ function buildZombieStory(req, rng, count) {
     title: req.title || pick(titles, rng),
     tone: 'scary',
     characters,
-    scenes: selected.map((s) => ({
+    scenes: opened.map((s) => ({
       ...s,
-      duration: req.duration / selected.length,
+      duration: req.duration / opened.length,
       narration: req.narration ? s.narration : '',
     })),
   };
@@ -344,12 +370,13 @@ function buildHeistStory(req, rng, count) {
       ],
     },
   ];
-  const selected = selectScenesForCount(beats, count);
+  const selected = selectScenesForCount(beats, count, rng, extractSubject(req.topic));
+  const opened = remixOpening(selected, rng, extractSubject(req.topic), leader);
   return {
     title: req.title || pick(['The Midnight Vault Job', 'Zero Trace Heist', 'Red Laser Escape'], rng),
     tone: 'action',
     characters,
-    scenes: selected.map((s) => ({ ...s, duration: req.duration / selected.length, narration: req.narration ? s.narration : '' })),
+    scenes: opened.map((s) => ({ ...s, duration: req.duration / opened.length, narration: req.narration ? s.narration : '' })),
   };
 }
 
@@ -404,7 +431,7 @@ function buildDynamicStory(req, rng, count) {
         narration: `One of them looked straight up at him and bolted toward the front door! ${heroName} ran for his life!`,
         characters: [
           { id: 'hero', action: 'run', emotion: 'scared', position: { x: 0.38, y: 0.82 }, targetX: 0.84, facing: 1 },
-          { id: fId, action: 'zombie_chase', emotion: 'angry', position: { x: 0.12, y: 0.82 }, targetX: 0.56, facing: 1 },
+          { id: fId, action: 'run', emotion: 'angry', position: { x: 0.12, y: 0.82 }, targetX: 0.56, facing: 1 },
         ],
       },
       {
@@ -505,6 +532,60 @@ function buildDynamicStory(req, rng, count) {
         ],
       },
     ],
+    educational: [
+      {
+        background: 'school', textOverlay: 'THE BIG QUESTION', effects: ['zoom'],
+        narration: `${heroName} thought they understood ${subject}, until one simple question changed the whole lesson.`,
+        characters: [{ id: 'hero', action: 'think', emotion: 'confused', position: { x: 0.35, y: 0.82 }, facing: 1 }],
+      },
+      {
+        background: 'lab', textOverlay: 'TEST ONE', effects: ['tv_glow'],
+        narration: `A quick experiment gave ${heroName} an answer, but it raised an even bigger question about ${subject}.`,
+        characters: [{ id: 'hero', action: 'point', emotion: 'determined', position: { x: 0.32, y: 0.82 }, facing: 1 }, { id: fId, action: 'think', emotion: 'confused', position: { x: 0.68, y: 0.82 }, facing: -1 }],
+      },
+      {
+        background: 'office', textOverlay: 'LOOK CLOSER', effects: ['zoom', 'float_text'],
+        narration: `The first result looked obvious. Then ${heroName} checked the evidence behind it.`,
+        characters: [{ id: 'hero', action: 'look_window', emotion: 'confused', position: { x: 0.5, y: 0.82 }, facing: 1 }],
+      },
+      {
+        background: 'lab', textOverlay: 'THE BREAKTHROUGH', effects: ['impact_flash'],
+        narration: `One missing detail connected the clues and made ${subject} finally click.`,
+        characters: [{ id: 'hero', action: 'wake_up', emotion: 'surprised', position: { x: 0.38, y: 0.82 }, facing: 1 }, { id: fId, action: 'celebrate', emotion: 'happy', position: { x: 0.68, y: 0.82 }, facing: -1 }],
+      },
+      {
+        background: 'school', textOverlay: 'PASS IT ON', effects: ['zoom', 'fade'],
+        narration: `Now ${heroName} could explain ${subject} clearly—and show why the small details matter.`,
+        characters: [{ id: 'hero', action: 'talk', emotion: 'happy', position: { x: 0.4, y: 0.82 }, facing: 1 }],
+      },
+    ],
+    motivational: [
+      {
+        background: 'bedroom', textOverlay: 'DAY ONE', effects: ['night'],
+        narration: `${heroName} kept putting off one goal. Tonight, ${subject} became the reason to finally begin.`,
+        characters: [{ id: 'hero', action: 'phone_scroll', emotion: 'sad', position: { x: 0.4, y: 0.82 }, facing: 1 }],
+      },
+      {
+        background: 'street', textOverlay: 'FIRST STEP', effects: ['rain', 'motion_lines'],
+        narration: `The first attempt went badly. ${heroName} wanted to quit before anyone noticed.`,
+        characters: [{ id: 'hero', action: 'fall', emotion: 'sad', position: { x: 0.35, y: 0.82 }, facing: 1 }],
+      },
+      {
+        background: 'school', textOverlay: 'SHOW UP AGAIN', effects: ['day'],
+        narration: `But ${subject} mattered more than looking perfect, so ${heroName} showed up again the next day.`,
+        characters: [{ id: 'hero', action: 'wake_up', emotion: 'determined', position: { x: 0.35, y: 0.82 }, facing: 1 }],
+      },
+      {
+        background: 'battlefield', textOverlay: 'THE GRIND', effects: ['motion_lines', 'dust'],
+        narration: `Small wins stacked into real progress. Each setback taught ${heroName} a better move.`,
+        characters: [{ id: 'hero', action: 'run', emotion: 'determined', position: { x: 0.18, y: 0.82 }, targetX: 0.82, facing: 1 }],
+      },
+      {
+        background: 'rooftop', textOverlay: 'THE PAYOFF', effects: ['day', 'zoom', 'fade'],
+        narration: `${heroName} reached the goal—not because it was easy, but because quitting stopped being the plan.`,
+        characters: [{ id: 'hero', action: 'celebrate', emotion: 'happy', position: { x: 0.44, y: 0.78 }, facing: 1 }, { id: fId, action: 'celebrate', emotion: 'happy', position: { x: 0.7, y: 0.78 }, facing: -1 }],
+      },
+    ],
     dramatic: [
       {
         background: 'bedroom', textOverlay: 'LATE NIGHT', effects: ['night', 'rain'],
@@ -546,10 +627,11 @@ function buildDynamicStory(req, rng, count) {
   };
 
   const chosenArc = scenariosByTone[tone] || scenariosByTone.dramatic;
-  const selected = selectScenesForCount(chosenArc, count);
+  const selected = selectScenesForCount(chosenArc, count, rng, subject);
+  const opened = remixOpening(selected, rng, subject, heroName);
 
   const titlePrefix = {
-    scary: '3:00 AM:',
+    scary: 'The Night It Changed:',
     action: 'Zero Mercy:',
     funny: 'When Everything Went Wrong:',
     dramatic: 'The Untold Story:',
@@ -561,15 +643,15 @@ function buildDynamicStory(req, rng, count) {
     title: req.title || `${titlePrefix} ${subject.charAt(0).toUpperCase() + subject.slice(1)}`.slice(0, 75),
     tone,
     characters,
-    scenes: selected.map((s) => ({
+    scenes: opened.map((s) => ({
       ...s,
-      duration: req.duration / selected.length,
+      duration: req.duration / opened.length,
       narration: req.narration ? s.narration : '',
     })),
   };
 }
 
-function selectScenesForCount(beats, count) {
+function selectScenesForCount(beats, count, rng = Math.random, subject = 'the plan') {
   if (beats.length === count) return [...beats];
   if (count < beats.length) {
     // Always retain both hook and ending while prioritizing plot beats in the middle.
@@ -584,17 +666,35 @@ function selectScenesForCount(beats, count) {
     out.push(beats[beats.length - 1]);
     return out;
   }
-  // If count > beats.length, expand middle action scenes smoothly
+  // Longer cuts need new story beats, not repeated copies of the same shot.
+  const extraBeats = [
+    { background: 'office', textOverlay: 'THE CLUE', effects: ['zoom'], action: 'think', emotion: 'confused', narration: `A detail about ${subject} did not add up, and the first plan began to unravel.` },
+    { background: 'street', textOverlay: 'PLAN B', effects: ['motion_lines', 'dust'], action: 'sneak', emotion: 'determined', narration: `With the easy route gone, a riskier move was the only way forward.` },
+    { background: 'city', textOverlay: 'TRUST NO ONE', effects: ['night', 'vignette'], action: 'look_left', emotion: 'scared', narration: `An unexpected discovery changed who could be trusted.` },
+    { background: 'forest', textOverlay: 'THE SETBACK', effects: ['rain', 'shake'], action: 'fall', emotion: 'surprised', narration: `Just when success seemed close, one mistake raised the stakes again.` },
+    { background: 'battlefield', textOverlay: 'LAST CHANCE', effects: ['speed_lines', 'impact_flash'], action: 'run', emotion: 'determined', narration: `There was no time left to wait. The final attempt began.` },
+    { background: 'rooftop', textOverlay: 'THE CHOICE', effects: ['zoom', 'night'], action: 'point', emotion: 'determined', narration: `One hard choice separated the lead from the ending they wanted.` },
+    { background: 'city', textOverlay: 'AFTERMATH', effects: ['fade'], action: 'look_right', emotion: 'sad', narration: `After everything, the consequences of ${subject} were only beginning.` },
+  ];
   const out = [...beats];
-  let insertIdx = Math.max(1, out.length - 2);
+  let insertIdx = 1;
+  let extraIndex = 0;
+  const requiredExtras = count - beats.length;
   while (out.length < count) {
-    const base = out[insertIdx % out.length];
-    out.splice(insertIdx, 0, {
-      ...base,
-      textOverlay: 'ESCALATION',
-      narration: 'Seconds later, the situation escalated even further.',
-    });
-    insertIdx++;
+    const base = beats[Math.min(beats.length - 2, Math.floor((extraIndex + 1) * (beats.length - 1) / (requiredExtras + 1)))];
+    const extra = extraBeats[extraIndex % extraBeats.length];
+    const lead = base.characters?.[0];
+    const characters = lead ? [{
+      ...lead,
+      action: extra.action,
+      emotion: extra.emotion,
+      position: { x: 0.25 + ((extraIndex * 0.19) % 0.5), y: 0.81 },
+      facing: extraIndex % 2 ? -1 : 1,
+      ...(extra.action === 'run' ? { targetX: extraIndex % 2 ? 0.18 : 0.82 } : { targetX: undefined }),
+    }, ...(base.characters || []).slice(1)] : (base.characters || []);
+    out.splice(insertIdx, 0, { ...extra, characters });
+    insertIdx += 2;
+    extraIndex++;
   }
   return out;
 }

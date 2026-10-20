@@ -142,6 +142,8 @@ input:focus, select:focus, textarea:focus, button:focus-visible, a:focus-visible
 
 .export-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
 
+.prompt-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.prompt-actions .btn { border-color: rgba(143,108,255,0.45); color: #d3c7ff; }
 .hook-block { padding: 12px; border-radius: 12px; border: 1px solid rgba(108, 140, 255, 0.22); background: linear-gradient(145deg, rgba(108, 140, 255, 0.08), rgba(143, 108, 255, 0.05)); }
 .hook-chips { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 8px; }
 .hook-chip { border: 1px solid var(--border); border-radius: 999px; background: var(--panel-2); color: var(--text); padding: 6px 10px; font: inherit; font-size: 0.78rem; cursor: pointer; transition: all 0.15s; }

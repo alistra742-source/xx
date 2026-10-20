@@ -135,7 +135,7 @@ describe('TTS configuration', () => {
   test('automatic voice provider is advertised as available when espeak is absent, with graceful online fallback', async () => {
     const tts = await createTts({ ttsProvider: 'auto', espeakBin: 'definitely-not-an-espeak-binary', ttsTimeoutMs: 100 });
     assert.equal(tts.enabled, true);
-    assert.equal(tts.name, 'online-tts-fallback');
+    assert.equal(tts.name, 'google-tts');
     assert.equal((await createTts({ ttsProvider: 'none' })).enabled, false);
   });
 });

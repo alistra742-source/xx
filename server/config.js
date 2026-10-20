@@ -20,10 +20,13 @@ export function loadConfig(env = process.env) {
     llmTimeoutMs: num(env.LLM_TIMEOUT_MS, 45000),
     llmCooldownMs: num(env.LLM_COOLDOWN_MS, 120000),
     llmMaxTokens: num(env.LLM_MAX_TOKENS, 900),
-    // Narration: 'auto' (tries espeak-ng, then free Google Translate TTS), 'espeak', 'gtts', 'http', or 'none'.
+    // Narration: ElevenLabs neural voice when ELEVENLABS_API is configured; otherwise auto fallback.
     ttsProvider: env.TTS_PROVIDER || 'auto',
     espeakBin: env.ESPEAK_BIN || 'espeak-ng',
     ttsUrl: env.TTS_URL || '',
+    elevenLabsApiKey: env.ELEVENLABS_API || '',
+    elevenLabsVoiceId: env.ELEVENLABS_VOICE_ID || 'pNInz6obpgDQGcFmaJgB',
+    elevenLabsModelId: env.ELEVENLABS_MODEL_ID || 'eleven_multilingual_v2',
     ttsTimeoutMs: num(env.TTS_TIMEOUT_MS, 30000),
   };
 }

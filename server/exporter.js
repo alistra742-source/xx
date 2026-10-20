@@ -71,7 +71,9 @@ export async function buildNarration({ project, tts, dir, lang, signal, bin }) {
       if (!voice) throw new ExportError(`Narration is enabled, but no voice was generated for scene ${i + 1}. Set TTS_PROVIDER=none to export without voice.`);
     }
     if (voice) {
-      const fitFilter = voice.endsWith('.mp3') ? `atempo=1.0,apad=whole_dur=${sc.duration}` : `apad=whole_dur=${sc.duration}`;
+      const fitFilter = voice.endsWith('.mp3')
+        ? `aresample=44100,aformat=sample_fmts=s16:channel_layouts=mono,apad=whole_dur=${sc.duration}`
+        : `apad=whole_dur=${sc.duration}`;
       await runFfmpeg(bin, ['-hide_banner', '-loglevel', 'error', '-y', '-i', voice,
         '-af', fitFilter, '-t', String(sc.duration), '-ar', '44100', '-ac', '1', seg], { signal });
     } else {

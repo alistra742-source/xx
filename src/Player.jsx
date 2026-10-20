@@ -34,8 +34,17 @@ export default function Player({ project, subs, activeScene, onScene }) {
   }, []);
 
   useEffect(() => {
+    voiceMapRef.current.forEach((value) => {
+      if (value && typeof value.then !== 'function') {
+        value.audio.pause();
+        URL.revokeObjectURL(value.url);
+      }
+    });
+    voiceMapRef.current.clear();
+    voiceSceneRef.current = -1;
+    setVoiceError('');
     if (tRef.current > total) seek(total);
-  }, [total]);
+  }, [project, total]);
 
   function draw(time) {
     const c = canvasRef.current;

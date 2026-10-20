@@ -10,7 +10,7 @@ const TWO_PI = Math.PI * 2;
 
 /** Scene and project geometry for a given output size. */
 export function layoutFor(W, H, characterCount = 1) {
-  const factor = characterCount >= 5 ? 0.25 : characterCount >= 3 ? 0.29 : 0.34;
+  const factor = characterCount >= 5 ? 0.34 : characterCount >= 3 ? 0.39 : 0.44;
   const scale = Math.min(W, H) * factor;
   return { W, H, scale, groundFraction: BACKGROUND_INFO.white.ground };
 }
@@ -81,7 +81,28 @@ function drawTopDrip(ctx, sk, drip, lineWidth, ink) {
   }
 
   // Style-specific details
-  if (top === 'hoodie') {
+  if (top === 'tshirt' || top === 'vest' || top === 'lab_coat') {
+    const shirt = top === 'lab_coat' ? '#e2e8f0' : '#f5f5f4';
+    ctx.fillStyle = shirt;
+    ctx.strokeStyle = '#101522';
+    ctx.lineWidth = Math.max(1.5, lineWidth * 0.35);
+    ctx.beginPath();
+    ctx.moveTo(sx - nx * wTop * 0.36, sy + dy * 0.06);
+    ctx.lineTo(sx + nx * wTop * 0.36, sy + dy * 0.06);
+    ctx.lineTo(hx + nx * wBot * 0.35, hy - ny * wBot * 0.2);
+    ctx.lineTo(hx - nx * wBot * 0.35, hy - ny * wBot * 0.2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    if (top === 'lab_coat') {
+      ctx.strokeStyle = acc;
+      ctx.lineWidth = Math.max(1.4, lineWidth * 0.28);
+      ctx.beginPath();
+      ctx.moveTo(sx + dx * 0.1, sy);
+      ctx.lineTo(hx + dx * 0.15, hy);
+      ctx.stroke();
+    }
+  } else if (top === 'hoodie') {
     // Hoodie collar bunched around neck + front kangaroo pocket + drawstrings
     ctx.fillStyle = col;
     ctx.beginPath();
@@ -403,9 +424,10 @@ function drawFigure(ctx, sk, { ink, lineWidth, face, shadowColor, scale, drip, i
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
 
-  // Dark outer outline pass so stick figures pop crisply against any background
-  const outlineW = lineWidth * 1.55;
-  ctx.strokeStyle = 'rgba(0,0,0,0.65)';
+  // Clean dark outer contour gives the illustrated figures the thick inked edge
+  // of the supplied reference instead of the thin, wire-like original strokes.
+  const outlineW = lineWidth * 1.95;
+  ctx.strokeStyle = '#101522';
   ctx.lineWidth = outlineW;
   seg(sk.lHip, sk.lKnee); seg(sk.lKnee, sk.lFoot);
   seg(sk.rHip, sk.rKnee); seg(sk.rKnee, sk.rFoot);
@@ -414,9 +436,9 @@ function drawFigure(ctx, sk, { ink, lineWidth, face, shadowColor, scale, drip, i
   seg(sk.rShoulder, sk.rElbow); seg(sk.rElbow, sk.rHand);
 
   // Main limb pass: back limbs, torso spine, clothes drip, front limbs
-  ctx.strokeStyle = bodyInk;
-  ctx.fillStyle = bodyInk;
-  ctx.lineWidth = lineWidth;
+  ctx.strokeStyle = '#f8fafc';
+  ctx.fillStyle = '#f8fafc';
+  ctx.lineWidth = lineWidth * 1.2;
 
   // Legs
   seg(sk.lHip, sk.lKnee); seg(sk.lKnee, sk.lFoot);
@@ -434,10 +456,14 @@ function drawFigure(ctx, sk, { ink, lineWidth, face, shadowColor, scale, drip, i
   ctx.lineWidth = lineWidth;
   seg(sk.rShoulder, sk.rElbow); seg(sk.rElbow, sk.rHand);
 
-  // Hands and sneakers/shoes
-  ctx.fillStyle = bodyInk;
+  // Soft mitten-like hands and rounded sneakers make the characters read as
+  // illustrated people rather than plain articulated wire figures.
+  const glove = drip?.outfitColor || '#e9eef2';
+  ctx.fillStyle = glove;
+  ctx.strokeStyle = '#101522';
+  ctx.lineWidth = Math.max(1.5, lineWidth * 0.32);
   for (const p of [sk.lHand, sk.rHand]) {
-    ctx.beginPath(); ctx.arc(p[0], p[1], lineWidth * 0.82, 0, TWO_PI); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(p[0], p[1], lineWidth * 1.45, lineWidth * 1.18, 0, 0, TWO_PI); ctx.fill(); ctx.stroke();
   }
   const shoeColor = drip?.top && drip.top !== 'none' ? (drip.accentColor || bodyInk) : bodyInk;
   ctx.strokeStyle = shoeColor;
@@ -447,26 +473,41 @@ function drawFigure(ctx, sk, { ink, lineWidth, face, shadowColor, scale, drip, i
     seg([p[0] - fDir * scale * 0.025, p[1]], [p[0] + fDir * scale * 0.055, p[1]]);
   }
 
-  // Head (filled subtle interior + bold stroke so background lines never cut through the face)
+  // Large pale illustrated head, with an inked outline and cool rim light.
+  // Build on a slightly larger silhouette rather than the former hollow stick head.
   const [hx, hy] = sk.head;
-  const r = sk.headR;
-  ctx.fillStyle = inf > 0.3 ? lerpColor('#1e293b', '#14532d', inf) : 'rgba(15,23,42,0.88)';
-  ctx.strokeStyle = bodyInk;
-  ctx.lineWidth = lineWidth;
+  const r = sk.headR * 1.32;
+  const skin = inf > 0.3 ? lerpColor('#d9f4f2', '#8be49b', inf) : '#f4f4f2';
+  ctx.save();
+  ctx.shadowColor = inf > 0.3 ? 'rgba(34,197,94,0.36)' : 'rgba(125,211,252,0.22)';
+  ctx.shadowBlur = r * 0.45;
+  // Cinematic shading: white crown fading to a cool blue chin, like the reference character.
+  if (inf > 0.3) {
+    ctx.fillStyle = skin;
+  } else {
+    const shade = ctx.createLinearGradient(hx, hy - r, hx, hy + r);
+    shade.addColorStop(0, '#ffffff');
+    shade.addColorStop(0.55, '#f4f8fb');
+    shade.addColorStop(1, '#8fd3f4');
+    ctx.fillStyle = shade;
+  }
+  ctx.strokeStyle = '#101522';
+  ctx.lineWidth = Math.max(lineWidth * 1.35, r * 0.14);
   ctx.beginPath();
   ctx.arc(hx, hy, r, 0, TWO_PI);
   ctx.fill();
   ctx.stroke();
+  ctx.restore();
 
-  // Face: eyes, expressive eyebrows, mouth
-  const eyeR = Math.max(1.5, r * 0.135 * Math.max(0.25, face.eye));
+  // Face: solid expressive eyes, separately inked eyebrows and curved mouth.
+  const eyeR = Math.max(2.2, r * 0.125 * Math.max(0.25, face.eye));
   const gazeShift = face.gaze * r * 0.24;
-  const eyeY = hy - r * 0.1;
+  const eyeY = hy - r * 0.06;
   const lEyeX = hx - r * 0.34 + gazeShift;
   const rEyeX = hx + r * 0.34 + gazeShift;
 
   // Zombie glowing red/yellow eyes or crisp normal eyes
-  ctx.fillStyle = inf > 0.45 ? '#ef4444' : bodyInk;
+  ctx.fillStyle = inf > 0.45 ? '#7f1d1d' : '#101522';
   if (face.eye < 0.25) {
     // Sleeping / closed eyes line
     ctx.lineWidth = Math.max(1.5, lineWidth * 0.45);
@@ -482,17 +523,17 @@ function drawFigure(ctx, sk, { ink, lineWidth, face, shadowColor, scale, drip, i
   // Eyebrows for strong emotion
   if (Math.abs(face.brow || 0) > 0.15) {
     const tilt = (face.brow || 0) * r * 0.14;
-    ctx.strokeStyle = bodyInk;
-    ctx.lineWidth = Math.max(1.5, lineWidth * 0.42);
+    ctx.strokeStyle = '#101522';
+    ctx.lineWidth = Math.max(2, lineWidth * 0.5);
     seg([lEyeX - r * 0.16, eyeY - r * 0.24 - tilt], [lEyeX + r * 0.16, eyeY - r * 0.24 + tilt]);
     seg([rEyeX - r * 0.16, eyeY - r * 0.24 + tilt], [rEyeX + r * 0.16, eyeY - r * 0.24 - tilt]);
   }
 
   // Mouth
   const mouthY = hy + r * 0.38;
-  ctx.strokeStyle = bodyInk;
-  ctx.fillStyle = inf > 0.5 ? '#16a34a' : bodyInk;
-  ctx.lineWidth = Math.max(1.6, lineWidth * 0.48);
+  ctx.strokeStyle = '#101522';
+  ctx.fillStyle = inf > 0.5 ? '#16a34a' : '#101522';
+  ctx.lineWidth = Math.max(2, lineWidth * 0.52);
   ctx.beginPath();
   if (face.mouth > 0.22) {
     ctx.ellipse(hx + gazeShift * 0.3, mouthY, r * 0.22, Math.max(1.2, r * 0.24 * face.mouth), 0, 0, TWO_PI);

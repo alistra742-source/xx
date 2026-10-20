@@ -31,6 +31,7 @@ export default function App() {
   const [project, setProject] = useState(null);
   const [source, setSource] = useState(null);
   const [busy, setBusy] = useState(null); // string while generating
+  const [improvingPrompt, setImprovingPrompt] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [activeScene, setActiveScene] = useState(0);
@@ -121,6 +122,21 @@ export default function App() {
 
   function chooseHook(text) { setField('topic', text); }
 
+  async function improvePrompt() {
+    setError('');
+    setNotice('');
+    setImprovingPrompt(true);
+    try {
+      const result = await api('/api/improve-prompt', { method: 'POST', body: { topic: form.topic, duration: form.duration } });
+      setField('topic', result.prompt);
+      setNotice('Prompt improved. Review it, then make your story.');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setImprovingPrompt(false);
+    }
+  }
+
   function startPolling(id) {
     clearInterval(pollRef.current);
     pollRef.current = setInterval(async () => {
@@ -196,6 +212,12 @@ export default function App() {
                 placeholder="Create a funny 45-second animation about a stick figure trying to survive a zombie apocalypse."
                 onChange={(e) => setField('topic', e.target.value)} />
             </label>
+            <div className="prompt-actions">
+              <button className="btn small" type="button" onClick={improvePrompt} disabled={improvingPrompt || !!busy || form.topic.trim().length < 3}>
+                {improvingPrompt ? 'Expanding your idea…' : '✦ Improve prompt with AI'}
+              </button>
+              <span className="muted small">Keeps your premise; adds story detail.</span>
+            </div>
             <label>Title (optional)
               <input value={form.title} maxLength={80} onChange={(e) => setField('title', e.target.value)} />
             </label>
