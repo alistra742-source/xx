@@ -7,6 +7,7 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173,
+    allowedHosts: [process.env.PREVIEW_HOST].filter(Boolean),
     proxy: {
       '/api': apiTarget,
       '/health': apiTarget,

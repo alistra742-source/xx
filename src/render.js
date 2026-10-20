@@ -53,6 +53,7 @@ export function drawProject(ctx, project, t, W, H, subs) {
   const cue = cues.find((c) => local >= c.start && local < c.end);
   renderFrame(ctx, sc, local, {
     W, H,
+    projectCharacters: project.characters,
     subtitle: { ...subtitleStyle(subs, W, H), enabled: subs.enabled !== false, text: cue?.text ?? '' },
   });
   return index;

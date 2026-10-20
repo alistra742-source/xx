@@ -19,9 +19,9 @@ export function loadConfig(env = process.env) {
     llamaUrl: env.LLAMA_URL || '',
     llmTimeoutMs: num(env.LLM_TIMEOUT_MS, 45000),
     llmCooldownMs: num(env.LLM_COOLDOWN_MS, 120000),
-    llmMaxTokens: num(env.LLM_MAX_TOKENS, 700),
-    // Narration: 'espeak' (local espeak-ng binary), 'http' (POST {text,language}, returns audio/wav), or 'none'.
-    ttsProvider: env.TTS_PROVIDER || 'none',
+    llmMaxTokens: num(env.LLM_MAX_TOKENS, 900),
+    // Narration: 'auto' (tries espeak-ng, then free Google Translate TTS), 'espeak', 'gtts', 'http', or 'none'.
+    ttsProvider: env.TTS_PROVIDER || 'auto',
     espeakBin: env.ESPEAK_BIN || 'espeak-ng',
     ttsUrl: env.TTS_URL || '',
     ttsTimeoutMs: num(env.TTS_TIMEOUT_MS, 30000),

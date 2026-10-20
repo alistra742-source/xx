@@ -1,10 +1,11 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { ACTIONS, BACKGROUNDS, LIMITS } from '../shared/constants.js';
-import { normalizeProject, validateGenerateRequest, ValidationError, sceneCountFor, normalizeAction } from '../shared/schema.js';
+import { normalizeProject, validateGenerateRequest, ValidationError, sceneCountFor, normalizeAction, inferStoryMeta } from '../shared/schema.js';
 import { splitNarration, subtitleCues } from '../shared/subtitles.js';
 import { solvePose } from '../shared/stickfigure.js';
-import { templateProject } from '../server/script/template.js';
+import { templateProject, extractSubject } from '../server/script/template.js';
+import { createTts } from '../server/tts.js';
 import { createJobs } from '../server/jobs.js';
 
 describe('schema', () => {
@@ -32,12 +33,30 @@ describe('schema', () => {
     assert.throws(() => normalizeProject({ duration: 30, scenes: [] }), ValidationError);
   });
 
-  test('validates generation requests', () => {
+  test('validates generation requests and automatic choices', () => {
     assert.throws(() => validateGenerateRequest({ topic: 'a' }), ValidationError);
     assert.throws(() => validateGenerateRequest({ topic: 'a funny cat', duration: 1000 }), ValidationError);
-    const ok = validateGenerateRequest({ topic: 'a funny cat story', duration: 30, tone: 'nope', characterCount: 99 });
-    assert.equal(ok.tone, 'funny');
-    assert.equal(ok.characterCount, LIMITS.maxCharacters);
+    const ok = validateGenerateRequest({ topic: 'a zombie apocalypse story', duration: 30, tone: 'auto', characterCount: 'auto' });
+    assert.equal(ok.tone, 'scary');
+    assert.equal(ok.characterCount, 5);
+    assert.equal(ok.autoTone, true);
+    assert.equal(ok.autoCharacters, true);
+    const explicit = validateGenerateRequest({ topic: 'a funny cat story', duration: 30, tone: 'funny', characterCount: 99 });
+    assert.equal(explicit.tone, 'funny');
+    assert.equal(explicit.characterCount, LIMITS.maxCharacters);
+  });
+
+  test('story inference selects zombie tone/cast and outfit schemas', () => {
+    assert.deepEqual(inferStoryMeta('green zombie apocalypse'), { tone: 'scary', characterCount: 5 });
+    const p = normalizeProject({
+      topic: 'zombie outbreak', duration: 30,
+      characters: [{ id: 'walker', role: 'zombie', isZombie: true }],
+      scenes: [{ background: 'horror', characters: [{ id: 'walker', action: 'zombie_walk', emotion: 'infected', isZombie: true }] }],
+    });
+    assert.equal(p.characters[0].isZombie, true);
+    assert.equal(p.characters[0].drip.isZombie, true);
+    assert.equal(p.scenes[0].characters[0].action, 'zombie_walk');
+    assert.ok(p.characters[0].drip.hat);
   });
 
   test('scene counts match the spec ranges', () => {
@@ -64,9 +83,43 @@ describe('subtitles', () => {
 });
 
 describe('template generator (offline fallback)', () => {
+  test('extracts story subject without narrating the user prompt', () => {
+    const subject = extractSubject('Create a funny 45-second animation about a stick figure trying to survive a zombie apocalypse.');
+    assert.ok(!/create|animation|stick figure|45-second/i.test(subject), subject);
+    assert.match(subject, /zombie/i);
+  });
+
+  test('zombie prompt generates an original complete outbreak plot, not a prompt reading', () => {
+    const topic = 'At 3 AM an unknown virus hit. A guy woke to alarms, saw green zombies chasing people outside his window, then fought to escape.';
+    const req = validateGenerateRequest({ topic, duration: 30, tone: 'auto', characterCount: 'auto', narration: true, seed: 12345 });
+    const p = normalizeProject(templateProject(req), req);
+    const all = p.scenes.map((s) => `${s.textOverlay} ${s.narration}`).join(' ');
+    const actions = p.scenes.flatMap((s) => s.characters.map((c) => c.action));
+    assert.equal(p.tone, 'scary');
+    assert.ok(p.characters.length >= 4 && p.characters.length <= LIMITS.maxCharacters);
+    assert.ok(actions.includes('wake_up'), 'alarms wake the hero');
+    assert.ok(actions.includes('watch_tv'), 'hero watches the news');
+    assert.ok(actions.includes('look_window'), 'hero looks out the window');
+    assert.ok(actions.includes('zombie_chase'), 'zombies chase civilians');
+    assert.ok(actions.includes('turn_zombie') || actions.includes('infect'), 'a victim is infected');
+    assert.ok(actions.includes('barricade'), 'survivor secures the door');
+    assert.ok(actions.includes('run'), 'survivor escapes');
+    assert.ok(/unknown virus|emergency broadcast|breaking news|lock all doors/i.test(all));
+    assert.ok(p.scenes.some((s) => s.characters.some((c) => c.isZombie)));
+    assert.ok(p.scenes.every((s) => !/create a .* animation|generate a video/i.test(s.narration)));
+  });
+
+  test('random seed changes story lines and the cast wears drip', () => {
+    const base = { topic: 'survive a zombie outbreak', duration: 30, tone: 'auto', autoTone: true, autoCharacters: true, narration: true, language: 'English' };
+    const a = normalizeProject(templateProject({ ...base, seed: 101 }), base);
+    const b = normalizeProject(templateProject({ ...base, seed: 909 }), base);
+    assert.notEqual(a.scenes[0].narration, b.scenes[0].narration);
+    assert.ok(a.characters.every((c) => c.drip && c.drip.hat && c.drip.top));
+  });
+
   test('produces a valid project for every tone', () => {
     for (const tone of ['funny', 'dramatic', 'educational', 'scary', 'motivational', 'action']) {
-      const raw = templateProject({ topic: 'a stick figure surviving a zombie apocalypse', duration: 45, tone, style: 'classic', aspectRatio: '9:16', characterCount: 2, narration: true, subtitles: true, language: 'English' });
+      const raw = templateProject({ topic: 'a stick figure surviving a zombie apocalypse', duration: 45, tone, autoTone: false, autoCharacters: false, style: 'classic', aspectRatio: '9:16', characterCount: 2, narration: true, subtitles: true, language: 'English', seed: 42 });
       const p = normalizeProject(raw, { duration: 45, tone });
       assert.equal(p.tone, tone);
       assert.ok(p.scenes.length >= 4);
@@ -75,6 +128,15 @@ describe('template generator (offline fallback)', () => {
         assert.ok(sc.characters.length >= 1);
       }
     }
+  });
+});
+
+describe('TTS configuration', () => {
+  test('automatic voice provider is advertised as available when espeak is absent, with graceful online fallback', async () => {
+    const tts = await createTts({ ttsProvider: 'auto', espeakBin: 'definitely-not-an-espeak-binary', ttsTimeoutMs: 100 });
+    assert.equal(tts.enabled, true);
+    assert.equal(tts.name, 'online-tts-fallback');
+    assert.equal((await createTts({ ttsProvider: 'none' })).enabled, false);
   });
 });
 

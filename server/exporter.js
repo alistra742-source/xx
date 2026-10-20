@@ -46,28 +46,40 @@ function runFfmpeg(bin, args, { signal, timeoutMs = 120000 } = {}) {
 }
 
 /** Build one WAV per scene (narration or silence), then concat into a single track. */
-async function buildNarration({ project, tts, dir, lang, signal, bin }) {
-  if (!project.narration || !tts?.enabled) return null;
+export async function buildNarration({ project, tts, dir, lang, signal, bin }) {
+  if (!project.narration) return null;
+  const requestedScenes = project.scenes.filter((sc) => String(sc.narration || '').trim());
+  if (requestedScenes.length === 0) throw new ExportError('Narration is enabled, but the story has no narration text. Regenerate the script or turn narration off.');
+  if (!tts?.enabled) throw new ExportError('Narration is enabled, but no TTS provider is available. Install espeak-ng, set TTS_PROVIDER=gtts/http, or turn narration off.');
   const segs = [];
   for (let i = 0; i < project.scenes.length; i++) {
     if (signal?.aborted) throw new ExportCancelled();
     const sc = project.scenes[i];
+    if (!String(sc.narration || '').trim()) {
+      const seg = join(dir, `seg${i}.wav`);
+      await runFfmpeg(bin, ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=mono', '-t', String(sc.duration), seg], { signal });
+      segs.push(seg);
+      continue;
+    }
     const raw = join(dir, `voice${i}.wav`);
     const seg = join(dir, `seg${i}.wav`);
     let voice = null;
     if (sc.narration) {
-      try { voice = await tts.synth(sc.narration, raw, lang); } catch { voice = null; }
+      try { voice = await tts.synth(sc.narration, raw, lang); } catch (err) {
+        throw new ExportError(`Narration failed for scene ${i + 1}: ${err.message || 'TTS provider unavailable'}`);
+      }
+      if (!voice) throw new ExportError(`Narration is enabled, but no voice was generated for scene ${i + 1}. Set TTS_PROVIDER=none to export without voice.`);
     }
     if (voice) {
+      const fitFilter = voice.endsWith('.mp3') ? `atempo=1.0,apad=whole_dur=${sc.duration}` : `apad=whole_dur=${sc.duration}`;
       await runFfmpeg(bin, ['-hide_banner', '-loglevel', 'error', '-y', '-i', voice,
-        '-af', `apad=whole_dur=${sc.duration}`, '-t', String(sc.duration), '-ar', '44100', '-ac', '1', seg], { signal });
+        '-af', fitFilter, '-t', String(sc.duration), '-ar', '44100', '-ac', '1', seg], { signal });
     } else {
       await runFfmpeg(bin, ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=mono',
         '-t', String(sc.duration), seg], { signal });
     }
     segs.push(seg);
   }
-  if (segs.every((_, i) => !project.scenes[i].narration)) return null;
   const list = join(dir, 'segments.txt');
   await writeFile(list, segs.map((s) => `file '${s}'`).join('\n'));
   const out = join(dir, 'narration.wav');
@@ -104,9 +116,17 @@ export async function renderMp4({ project, options, outPath, workDir, tts, ffmpe
   const child = spawn(ffmpegBin, args, { stdio: ['pipe', 'ignore', 'pipe'] });
   let ffErr = '';
   child.stderr.on('data', (d) => { if (ffErr.length < 4000) ffErr += d; });
+  child.stdin.on('error', () => {});
   let exited = null;
-  const exitP = new Promise((resolve) => child.on('close', (code) => { exited = code; resolve(code); }));
-  child.on('error', () => {});
+  let ffmpegSpawnError = null;
+  const exitP = new Promise((resolve) => {
+    child.on('close', (code) => { exited = code; resolve(code); });
+    child.on('error', (err) => {
+      ffmpegSpawnError = err;
+      exited = -1;
+      resolve(-1);
+    });
+  });
   const onAbort = () => child.kill('SIGKILL');
   signal?.addEventListener('abort', onAbort, { once: true });
 
@@ -119,11 +139,14 @@ export async function renderMp4({ project, options, outPath, workDir, tts, ffmpe
       const sceneFrames = Math.round(sc.duration * fps);
       for (let f = 0; f < sceneFrames; f++) {
         if (signal?.aborted) throw new ExportCancelled();
-        if (exited !== null) throw new ExportError(`ffmpeg stopped early (code ${exited}): ${ffErr.trim().slice(-300)}`);
+        if (exited !== null) throw new ExportError(ffmpegSpawnError
+          ? `ffmpeg failed to start: ${ffmpegSpawnError.message}`
+          : `ffmpeg stopped early (code ${exited}): ${ffErr.trim().slice(-300)}`);
         const t = f / fps;
         const cue = cues.find((c) => t >= c.start && t < c.end);
         renderFrame(ctx, sc, t, {
           W, H,
+          projectCharacters: project.characters,
           subtitle: { ...subtitleStyle(subs, W, H), enabled: subs.enabled !== false, text: cue?.text ?? '' },
         });
         const buf = canvas.data();

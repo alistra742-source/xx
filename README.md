@@ -1,18 +1,18 @@
 # AI Stick-Figure Video Maker
 
-Type a topic, pick a tone and length, and the app writes a script, splits it into scenes, animates procedural stick figures on a canvas, and exports an **MP4** you can download. It is built to run in about 512 MB of RAM on Railway and works without any paid API or language model.
+Type a story idea and length. The story generator chooses the tone, cast, outfits and scene beats, animates articulated stick figures, and exports a downloadable **MP4 with real spoken narration**. It is designed for Railway's ~512 MB target and works without a paid API or model; the built-in generator is a local procedural fallback, not an LLM.
 
 ## What works out of the box
 
 | Feature | Without any external service |
 | --- | --- |
-| Script + scene generation | Yes, via the built-in template generator |
-| Stick-figure animation (walk, run, jump, fight, cry, celebrate, …) | Yes |
+| Script + scene generation | Yes, via built-in prompt-aware procedural story generator (optional local LLM) |
+| Stick-figure animation (articulated walk/run/sleep/wake/zombie chase/infection, clothing, hats and props) | Yes |
 | Backgrounds (street, forest, city, horror, …) and effects (shake, zoom, day/night, …) | Yes |
 | Scene editor, preview, timeline, regenerate scene | Yes |
 | Subtitles (size, position, colour, outline) | Yes, from the script's narration text |
 | MP4 export (9:16, 16:9, 1:1; 480–1080p; 12/24/30 fps) | Yes, when `ffmpeg` is installed (the Docker image installs it) |
-| Narration audio | Only with `TTS_PROVIDER=espeak` or `http`. With `none`, no audio is generated. |
+| Narration audio | Yes by default: local `espeak-ng` (offline, bundled in Docker); free online TTS is the auto-mode fallback. With `TTS_PROVIDER=none`, no audio. |
 | Local LLM script writing (Qwen2.5-0.5B GGUF) | Only if a `llama-server` is running and `LLAMA_URL` is set |
 | WebM fallback | Yes, in the browser, when server MP4 export is unavailable |
 
@@ -22,7 +22,7 @@ If the language model is missing, slow, or fails, the app falls back to the temp
 
 - Node.js 20.10 or newer (22 recommended)
 - `ffmpeg` on `PATH` for MP4 export (`apt-get install ffmpeg`)
-- Optional: `espeak-ng` for offline narration, `llama-server` for the LLM
+- `espeak-ng` for offline narration (included in Docker); optional `llama-server` for model-generated stories
 
 ## Local setup
 
@@ -59,8 +59,8 @@ End-to-end check against a running server: `npm run e2e:export`. It generates a 
 | `LLAMA_URL` | empty | e.g. `http://127.0.0.1:8080` for `llama-server`. Empty = no LLM |
 | `LLM_TIMEOUT_MS` | `45000` | Per-request timeout for the model |
 | `LLM_COOLDOWN_MS` | `120000` | After a failure, skip the model for this long |
-| `LLM_MAX_TOKENS` | `700` | Output token cap |
-| `TTS_PROVIDER` | `none` | `none`, `espeak`, or `http` |
+| `LLM_MAX_TOKENS` | `900` | Output token cap |
+| `TTS_PROVIDER` | `auto` | `auto` (local espeak then free online fallback), `espeak`, `gtts`, `http`, or `none` |
 | `ESPEAK_BIN` | `espeak-ng` | Used when `TTS_PROVIDER=espeak` |
 | `TTS_URL` | empty | Used when `TTS_PROVIDER=http`: POSTs `{text, language}`, expects `audio/wav` |
 | `TTS_TIMEOUT_MS` | `30000` | TTS request timeout |
@@ -73,7 +73,7 @@ llama-server -m models/qwen2.5-0.5b-instruct-q4_k_m.gguf --port 8080 -c 2048 --p
 export LLAMA_URL=http://127.0.0.1:8080
 ```
 
-The model only writes the script JSON. It never generates frames. Every request is validated, and unknown actions or effects are replaced with safe defaults. No model output is executed.
+The model only writes script/scene JSON. It never generates frames. Every request is validated, and unknown actions or effects are replaced with safe defaults. No model output is executed. The default no-model story generator interprets supported genres and story cues; it is a curated procedural fallback, not an open-ended LLM.
 
 Note: the Railway image does not include `llama-server`. To use the model on Railway, run a separate llama.cpp service and point `LLAMA_URL` at it. On a 512 MB instance, the model is only practical as a separate service.
 
@@ -82,17 +82,17 @@ Note: the Railway image does not include `llama-server`. To use the model on Rai
 - Exports render **one job at a time**, one frame at a time, into a single reused canvas. Frames are piped to ffmpeg as raw RGBA, so memory does not grow with video length.
 - ffmpeg runs with `-threads 2` and the `veryfast` preset.
 - The export queue is capped by `MAX_EXPORT_QUEUE`. Jobs can be cancelled.
-- Defaults are 720 px and 24 fps. The server clamps durations to 10–90 s, scenes to 12, and characters to 4.
-- Measured locally: a 30 s, 480×854, 12 fps MP4 rendered in about 1.5 s. I have not measured 720p or 1080p timings on Railway. Check your own with `npm run e2e:export`.
+- Defaults are 720 px and 24 fps. The server clamps durations to 10–90 s, scenes to 12, and the generated cast to 8. The story chooses cast size and tone automatically.
+- Verified locally: the 30 s, 480×854, 12 fps zombie-story MP4 with AAC narration rendered and downloaded successfully in about 5 seconds using online TTS. 720p/1080p timings on Railway are not measured. Check your own with `npm run e2e:export`.
 
 If a Railway instance runs out of memory, lower the defaults with `MAX_EXPORT_QUEUE=1`, or request 480p in the UI.
 
 ## Known limitations
 
 - MP4 export depends on `ffmpeg` being installed. If it is missing, the app says so and offers the WebM fallback, which is recorded in the browser and labelled WebM.
-- Narration needs a TTS provider. With `TTS_PROVIDER=none`, the video has subtitles only and no audio. No audio is fabricated.
+- Narration is enabled by default. Docker includes offline espeak-ng; if it is missing, automatic TTS attempts a real online Google TTS response. Voice synthesis failure is reported rather than silently producing a no-voice MP4. `TTS_PROVIDER=none` is an explicit no-voice option. Online fallback needs outbound network access.
 - The stick figures are procedural. The action set is fixed, so the AI cannot invent new animations.
-- The local LLM is optional and not bundled. Without it, scripts come from the template generator, which is less varied.
+- The local LLM is optional and not bundled. Without it, a prompt-aware procedural story generator picks story arcs (including the outbreak sequence), tone and cast. This is not a general-purpose LLM; unrelated open-ended ideas use genre-specific story templates.
 - Exported videos are not kept. Download them soon after rendering.
 
 ## Project layout

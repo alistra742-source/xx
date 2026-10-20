@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Player from './Player.jsx';
 import { recordWebm, webmSupported } from './webm.js';
 import { totalSeconds } from './render.js';
+import { HATS, TOPS, ACCESSORIES } from '../shared/constants.js';
 
 async function api(path, options = {}) {
   const res = await fetch(path, {
@@ -24,8 +25,8 @@ const TERMINAL = ['done', 'error', 'cancelled'];
 export default function App() {
   const [config, setConfig] = useState(null);
   const [form, setForm] = useState({
-    topic: '', title: '', language: 'English', duration: 30, tone: 'funny', style: 'classic',
-    characterCount: 1, aspectRatio: '9:16', narration: true, subtitles: true,
+    topic: '', title: '', language: 'English', duration: 30, tone: 'auto', style: 'classic',
+    characterCount: 'auto', aspectRatio: '9:16', narration: true, subtitles: true,
   });
   const [project, setProject] = useState(null);
   const [source, setSource] = useState(null);
@@ -57,13 +58,16 @@ export default function App() {
   async function generate(e) {
     e?.preventDefault();
     setError(''); setNotice(''); setJob(null);
-    setBusy('Writing script and scenes… (the local model can take a minute)');
+    setBusy('Dreaming up characters, plot twists and scenes…');
     try {
-      const res = await api('/api/script', { method: 'POST', body: form });
+      const request = { ...form, seed: Math.floor(Math.random() * 1e9) };
+      const res = await api('/api/script', { method: 'POST', body: request });
       setProject(res.project);
       setSource(res.source);
+      const chosenTone = res.project.tone || 'story';
+      setNotice(`${chosenTone.toUpperCase()} STORY · ${res.project.characters.length} characters styled for the scene`);
       setActiveScene(0);
-      if (res.warning) setNotice(`The local model was unavailable, so the template generator was used. (${res.warning})`);
+      if (res.warning) setNotice(`${chosenTone.toUpperCase()} STORY · ${res.project.characters.length} characters · local model unavailable, used story generator`);
       setSubs({ ...DEFAULT_SUBS, enabled: res.project.subtitles?.enabled !== false });
     } catch (err) {
       setError(err.message);
@@ -95,6 +99,27 @@ export default function App() {
   }
 
   function setProjectAspect(aspectRatio) { setProject((p) => ({ ...p, aspectRatio })); }
+
+  function updateDrip(characterId, patch) {
+    setProject((p) => ({
+      ...p,
+      characters: p.characters.map((c) => c.id === characterId ? { ...c, drip: { ...c.drip, ...patch } } : c),
+    }));
+  }
+
+  function rerollStory() {
+    generate();
+  }
+
+  const quickHooks = [
+    'At 3 AM, an unknown virus hit the city. A sleepy guy woke to emergency sirens, turned on the TV, and saw green zombies chasing people below his window.',
+    'A broke delivery guy accepts one final late-night order, but the address is an abandoned mansion that is not empty.',
+    'A quiet student discovers their school has been replaced by clones overnight—and one clone knows their name.',
+    'Two friends rob a museum for fun, then the paintings start moving and hunt them through the exhibits.',
+    'A lonely astronaut wakes up on Mars with one message from Earth: do not come home.',
+  ];
+
+  function chooseHook(text) { setField('topic', text); }
 
   function startPolling(id) {
     clearInterval(pollRef.current);
@@ -133,7 +158,7 @@ export default function App() {
     setError(''); setNotice('');
     setWebm({ running: true, progress: 0, url: null });
     try {
-      const blob = await recordWebm(project, { fps: exportOpts.fps, subs, onProgress: (p) => setWebm((w) => ({ ...w, progress: p })) });
+      const blob = await recordWebm(project, { fps: exportOpts.fps, subs, narration: project.narration, onProgress: (p) => setWebm((w) => ({ ...w, progress: p })) });
       setWebm({ running: false, progress: 1, url: URL.createObjectURL(blob) });
     } catch (err) {
       setWebm({ running: false, progress: 0, url: null });
@@ -156,7 +181,7 @@ export default function App() {
             <span className={`badge ${config.llm.enabled ? 'ok' : ''}`}>{config.llm.enabled ? 'Local LLM on' : 'Template scripts'}</span>
             <span className={`badge ${serverCanMp4 ? 'ok' : 'warn'}`}>{serverCanMp4 ? 'MP4 export' : 'WebM export only'}</span>
             <span className={`badge ${config.narration.available ? 'ok' : ''}`}>
-              {config.narration.available ? `Narration: ${config.narration.provider}` : 'No narration (subtitles only)'}
+              {config.narration.available ? `Voice: ${config.narration.provider}` : 'Voice provider unavailable'}
             </span>
           </div>
         )}
@@ -174,23 +199,23 @@ export default function App() {
             <label>Title (optional)
               <input value={form.title} maxLength={80} onChange={(e) => setField('title', e.target.value)} />
             </label>
+            <div className="hook-block">
+              <span className="muted small">Quick story sparks</span>
+              <div className="hook-chips">{quickHooks.map((hook, i) => <button type="button" className="hook-chip" key={i} onClick={() => chooseHook(hook)}>{['🧟 Outbreak', '👻 Haunted', '🎓 School twist', '💎 Heist', '🚀 Sci-fi'][i]}</button>)}</div>
+            </div>
             <div className="row">
               <label>Duration
                 <select value={form.duration} onChange={(e) => setField('duration', Number(e.target.value))}>
                   {[15, 20, 30, 45, 60].map((d) => <option key={d} value={d}>{d} s</option>)}
                 </select>
               </label>
-              <label>Tone
-                <select value={form.tone} onChange={(e) => setField('tone', e.target.value)}>
-                  {(config?.tones ?? []).map((t) => <option key={t} value={t}>{t}</option>)}
-                </select>
+              <label>Story vibe
+                <div className="auto-choice">✦ Auto-picked from your story</div>
               </label>
             </div>
             <div className="row">
-              <label>Characters
-                <select value={form.characterCount} onChange={(e) => setField('characterCount', Number(e.target.value))}>
-                  {[1, 2, 3, 4].map((n) => <option key={n} value={n}>{n}</option>)}
-                </select>
+              <label>Cast
+                <div className="auto-choice">✦ The story chooses the cast</div>
               </label>
               <label>Aspect
                 <select value={form.aspectRatio} onChange={(e) => setField('aspectRatio', e.target.value)}>
@@ -202,8 +227,8 @@ export default function App() {
               <label className="check"><input type="checkbox" checked={form.narration} onChange={(e) => setField('narration', e.target.checked)} /> Narration</label>
               <label className="check"><input type="checkbox" checked={form.subtitles} onChange={(e) => setField('subtitles', e.target.checked)} /> Subtitles</label>
             </div>
-            <button className="btn primary" type="submit" disabled={!!busy || !config}>
-              {busy ? 'Generating…' : 'Generate video'}
+            <button className="btn primary generate-btn" type="submit" disabled={!!busy || !config}>
+              {busy ? 'Building your story…' : '✦ Make my story'}
             </button>
             {busy && <div className="progress indeterminate" role="status">{busy}</div>}
           </form>
@@ -217,9 +242,10 @@ export default function App() {
               <h2>2. Preview</h2>
               <input className="title-input" aria-label="Video title" value={project.title}
                 onChange={(e) => setProject((p) => ({ ...p, title: e.target.value }))} />
-              <p className="muted small">Script source: {source === 'llm' ? 'local Qwen model' : 'template generator'} · {project.scenes.length} scenes · {total.toFixed(1)} s
+              <p className="muted small">{project.tone} story · {project.characters.length} characters · {project.scenes.length} scenes · {total.toFixed(1)} s
                 {durationWarning && <span className="warn-text"> (target {project.duration} s)</span>}</p>
               <Player project={project} subs={subs} activeScene={activeScene} onScene={setActiveScene} />
+              <button className="btn reroll-btn" onClick={rerollStory} disabled={!!busy}>↻ Make a different version</button>
             </section>
 
             <section className="panel">
@@ -278,6 +304,22 @@ export default function App() {
               )}
               {job?.status === 'error' && <div className="alert error">{job.error}</div>}
               {job?.status === 'cancelled' && <div className="alert">Export cancelled.</div>}
+            </section>
+
+            <section className="panel cast-panel">
+              <h2>Cast & drip <span className="muted small">— every story gets its own look</span></h2>
+              <div className="cast-grid">
+                {project.characters.map((character) => (
+                  <article className={`cast-card${character.isZombie ? ' zombie-card' : ''}`} key={character.id}>
+                    <div className="cast-avatar" style={{ '--cast-color': character.isZombie ? '#4ade80' : character.color }}>{character.isZombie ? '☣' : '◉'}</div>
+                    <div className="cast-info"><strong>{character.name}</strong><span>{character.role}{character.isZombie ? ' · infected' : ''}</span></div>
+                    <label>Hat<select value={character.drip?.hat ?? 'none'} onChange={(e) => updateDrip(character.id, { hat: e.target.value })}>{HATS.map((hat) => <option key={hat} value={hat}>{hat.replaceAll('_', ' ')}</option>)}</select></label>
+                    <label>Fit<select value={character.drip?.top ?? 'hoodie'} onChange={(e) => updateDrip(character.id, { top: e.target.value })}>{TOPS.map((top) => <option key={top} value={top}>{top.replaceAll('_', ' ')}</option>)}</select></label>
+                    <label>Accessory<select value={character.drip?.accessory ?? 'none'} onChange={(e) => updateDrip(character.id, { accessory: e.target.value })}>{ACCESSORIES.map((acc) => <option key={acc} value={acc}>{acc.replaceAll('_', ' ')}</option>)}</select></label>
+                    <label>Color<input type="color" value={character.drip?.outfitColor ?? '#3b82f6'} onChange={(e) => updateDrip(character.id, { outfitColor: e.target.value })} /></label>
+                  </article>
+                ))}
+              </div>
             </section>
 
             <section className="panel scenes-panel">

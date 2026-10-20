@@ -19,9 +19,11 @@ async function api(path, init) {
 const script = await api('/api/script', {
   method: 'POST',
   headers: { 'content-type': 'application/json' },
-  body: JSON.stringify({ topic: 'Create a funny 30-second animation about a stick figure surviving a zombie apocalypse', duration: 30, tone: 'funny', characterCount: 2, narration: false, subtitles: true }),
+  body: JSON.stringify({ topic: 'At 3 AM an unknown virus hit the city. A guy woke to alarms, saw green zombies chasing people below his window, and had to escape.', duration: 30, tone: 'auto', characterCount: 'auto', narration: true, subtitles: true }),
 });
-console.log(`script: source=${script.source} scenes=${script.project.scenes.length} duration=${script.project.duration}s`);
+console.log(`script: source=${script.source} title=${script.project.title} tone=${script.project.tone} cast=${script.project.characters.length} scenes=${script.project.scenes.length} duration=${script.project.duration}s`);
+if (script.project.scenes.some((sc) => /create a|make a|generate a|animation about/i.test(sc.narration))) throw new Error('Generated narration appears to repeat the user prompt instead of narrating story events.');
+if (!script.project.scenes.some((sc) => sc.characters.some((c) => ['zombie_walk', 'zombie_chase', 'turn_zombie', 'infect'].includes(c.action)))) throw new Error('Outbreak story is missing animated zombie actions.');
 
 const started = await api('/api/exports', {
   method: 'POST',
@@ -51,3 +53,4 @@ const videoLine = info.split('\n').find((l) => l.includes('Video:')) || '';
 console.log(info.split('\n').find((l) => l.includes('Duration:'))?.trim());
 console.log(videoLine.trim());
 if (!/Video: h264/.test(info)) throw new Error('downloaded file is not an H.264 video');
+if (!/Audio:/.test(info)) throw new Error('downloaded MP4 has no spoken audio track');
