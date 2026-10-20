@@ -54,10 +54,14 @@ function drawTopDrip(ctx, sk, drip, lineWidth, ink) {
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
 
-  // Torso garment polygon
-  ctx.fillStyle = col;
-  ctx.strokeStyle = 'rgba(0,0,0,0.45)';
-  ctx.lineWidth = Math.max(1.5, lineWidth * 0.32);
+  // A shaded silhouette gives every jacket a little volume instead of reading as a flat shape.
+  const garment = ctx.createLinearGradient(sx - nx * wTop, sy - ny * wTop, sx + nx * wTop, sy + ny * wTop);
+  garment.addColorStop(0, lerpColor(col, '#07111f', 0.22));
+  garment.addColorStop(0.48, col);
+  garment.addColorStop(1, lerpColor(col, '#ffffff', 0.16));
+  ctx.fillStyle = garment;
+  ctx.strokeStyle = 'rgba(2,6,23,0.78)';
+  ctx.lineWidth = Math.max(1.5, lineWidth * 0.34);
   ctx.beginPath();
   ctx.moveTo(sx - nx * wTop, sy - ny * wTop);
   ctx.lineTo(sx + nx * wTop, sy + ny * wTop);
@@ -70,15 +74,39 @@ function drawTopDrip(ctx, sk, drip, lineWidth, ink) {
   // Sleeves along upper arms
   const sleeveFrac = top === 'tshirt' || top === 'vest' ? (top === 'vest' ? 0 : 0.48) : 0.85;
   if (sleeveFrac > 0) {
-    ctx.strokeStyle = col;
-    ctx.lineWidth = lineWidth * (top === 'puff_jacket' ? 1.85 : 1.45);
     for (const [sh, el] of [[sk.lShoulder, sk.lElbow], [sk.rShoulder, sk.rElbow]]) {
-      ctx.beginPath();
-      ctx.moveTo(sh[0], sh[1]);
-      ctx.lineTo(sh[0] + (el[0] - sh[0]) * sleeveFrac, sh[1] + (el[1] - sh[1]) * sleeveFrac);
-      ctx.stroke();
+      const ex = sh[0] + (el[0] - sh[0]) * sleeveFrac;
+      const ey = sh[1] + (el[1] - sh[1]) * sleeveFrac;
+      ctx.strokeStyle = 'rgba(2,6,23,0.68)';
+      ctx.lineWidth = lineWidth * (top === 'puff_jacket' ? 2.1 : 1.72);
+      ctx.beginPath(); ctx.moveTo(sh[0], sh[1]); ctx.lineTo(ex, ey); ctx.stroke();
+      ctx.strokeStyle = garment;
+      ctx.lineWidth = lineWidth * (top === 'puff_jacket' ? 1.78 : 1.4);
+      ctx.beginPath(); ctx.moveTo(sh[0], sh[1]); ctx.lineTo(ex, ey); ctx.stroke();
     }
   }
+
+  // Fine seams, zipper and pocket stitching add readable fabric detail at short-video size.
+  ctx.strokeStyle = 'rgba(255,255,255,0.30)';
+  ctx.lineWidth = Math.max(0.9, lineWidth * 0.12);
+  ctx.beginPath();
+  ctx.moveTo(sx + nx * wTop * 0.12, sy + ny * wTop * 0.12);
+  ctx.lineTo(hx + nx * wBot * 0.12, hy + ny * wBot * 0.12);
+  ctx.stroke();
+  const pocketX = sx + dx * 0.60 + nx * wTop * 0.27;
+  const pocketY = sy + dy * 0.60 + ny * wTop * 0.27;
+  const pocketW = wTop * 0.42;
+  const pocketH = torsoLen * 0.15;
+  ctx.fillStyle = 'rgba(2,6,23,0.16)';
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(pocketX - pocketW / 2, pocketY - pocketH / 2, pocketW, pocketH, Math.max(1, lineWidth * 0.12));
+  else ctx.rect(pocketX - pocketW / 2, pocketY - pocketH / 2, pocketW, pocketH);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.28)';
+  ctx.beginPath();
+  ctx.moveTo(pocketX - pocketW * 0.38, pocketY - pocketH * 0.12);
+  ctx.lineTo(pocketX + pocketW * 0.38, pocketY - pocketH * 0.12);
+  ctx.stroke();
 
   // Style-specific details
   if (top === 'hoodie') {
@@ -347,8 +375,68 @@ function drawProp(ctx, sk, scale, t) {
     }
   } else if (prop === 'phone' || prop === 'remote') {
     const [rx, ry] = sk.rHand;
-    ctx.fillStyle = '#0ea5e9';
-    ctx.fillRect(rx - r * 0.2, ry - r * 0.35, r * 0.4, r * 0.6);
+    const phone = prop === 'phone';
+    const pw = Math.max(8, r * (phone ? 0.54 : 0.46));
+    const ph = Math.max(12, r * (phone ? 0.96 : 0.72));
+    const bob = Math.sin(t * 2.4 + hx * 0.01) * r * 0.025;
+    ctx.save();
+    ctx.translate(rx, ry + bob);
+    ctx.rotate(0.08 + Math.sin(t * 1.8 + hx * 0.02) * 0.045);
+    const corner = Math.max(2, r * 0.09);
+    const caseGradient = ctx.createLinearGradient(-pw / 2, -ph / 2, pw / 2, ph / 2);
+    caseGradient.addColorStop(0, phone ? '#334155' : '#475569');
+    caseGradient.addColorStop(0.5, '#080d17');
+    caseGradient.addColorStop(1, '#1e293b');
+    ctx.shadowColor = phone ? 'rgba(56,189,248,0.72)' : 'rgba(148,163,184,0.35)';
+    ctx.shadowBlur = phone ? r * (0.25 + 0.12 * (0.5 + 0.5 * Math.sin(t * 3))) : r * 0.08;
+    ctx.fillStyle = caseGradient;
+    ctx.strokeStyle = 'rgba(226,232,240,0.7)';
+    ctx.lineWidth = Math.max(1, r * 0.035);
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(-pw / 2, -ph / 2, pw, ph, corner);
+    else ctx.rect(-pw / 2, -ph / 2, pw, ph);
+    ctx.fill(); ctx.stroke();
+    ctx.shadowBlur = 0;
+    if (phone) {
+      const screen = ctx.createLinearGradient(0, -ph * 0.38, 0, ph * 0.38);
+      screen.addColorStop(0, '#164e78'); screen.addColorStop(1, '#081525');
+      ctx.fillStyle = screen;
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(-pw * 0.38, -ph * 0.39, pw * 0.76, ph * 0.78, corner * 0.55);
+      else ctx.rect(-pw * 0.38, -ph * 0.39, pw * 0.76, ph * 0.78);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.82)';
+      ctx.fillRect(-pw * 0.24, -ph * 0.30, pw * 0.19, Math.max(0.8, r * 0.025));
+      ctx.fillRect(-pw * 0.01, -ph * 0.30, pw * 0.11, Math.max(0.8, r * 0.025));
+      ctx.fillStyle = 'rgba(255,255,255,0.76)';
+      ctx.beginPath(); ctx.arc(-pw * 0.19, -ph * 0.08, Math.max(1, r * 0.065), 0, TWO_PI); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.88)';
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(-pw * 0.02, -ph * 0.15, pw * 0.27, Math.max(1.5, ph * 0.12), corner * 0.3);
+      else ctx.rect(-pw * 0.02, -ph * 0.15, pw * 0.27, Math.max(1.5, ph * 0.12));
+      ctx.fill();
+      ctx.fillStyle = '#38bdf8';
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(-pw * 0.24, ph * 0.06, pw * 0.42, Math.max(1.5, ph * 0.13), corner * 0.3);
+      else ctx.rect(-pw * 0.24, ph * 0.06, pw * 0.42, Math.max(1.5, ph * 0.13));
+      ctx.fill();
+      const pulse = 0.55 + 0.45 * Math.sin(t * 4.2);
+      ctx.globalAlpha = pulse;
+      ctx.fillStyle = '#f43f5e';
+      ctx.beginPath(); ctx.arc(pw * 0.29, -ph * 0.33, Math.max(1.2, r * 0.055), 0, TWO_PI); ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = 'rgba(255,255,255,0.8)';
+      ctx.beginPath(); ctx.arc(0, ph * 0.43, Math.max(1, r * 0.035), 0, TWO_PI); ctx.fill();
+    } else {
+      for (let i = 0; i < 5; i++) {
+        ctx.fillStyle = ['#ef4444', '#facc15', '#22c55e', '#3b82f6', '#94a3b8'][i];
+        ctx.beginPath(); ctx.arc(0, -ph * 0.28 + i * ph * 0.14, Math.max(1, r * 0.05), 0, TWO_PI); ctx.fill();
+      }
+    }
+    // A small thumb overlaps the glass so the device feels held rather than floating.
+    ctx.fillStyle = 'rgba(241,245,249,0.92)';
+    ctx.beginPath(); ctx.ellipse(pw * 0.39, ph * 0.18, Math.max(1.5, r * 0.075), Math.max(2, r * 0.13), 0.28, 0, TWO_PI); ctx.fill();
+    ctx.restore();
   } else if (prop === 'plank') {
     const [lx, ly] = sk.lHand;
     const [rx, ry] = sk.rHand;
@@ -447,70 +535,108 @@ function drawFigure(ctx, sk, { ink, lineWidth, face, shadowColor, scale, drip, i
     seg([p[0] - fDir * scale * 0.025, p[1]], [p[0] + fDir * scale * 0.055, p[1]]);
   }
 
-  // Head (filled subtle interior + bold stroke so background lines never cut through the face)
+  // Soft porcelain face with an inked edge, cheek glow and tiny moving eye blinks.
   const [hx, hy] = sk.head;
   const r = sk.headR;
-  ctx.fillStyle = inf > 0.3 ? lerpColor('#1e293b', '#14532d', inf) : 'rgba(15,23,42,0.88)';
-  ctx.strokeStyle = bodyInk;
-  ctx.lineWidth = lineWidth;
-  ctx.beginPath();
-  ctx.arc(hx, hy, r, 0, TWO_PI);
-  ctx.fill();
+  const faceGradient = ctx.createLinearGradient(hx - r * 0.78, hy - r * 0.92, hx + r * 0.52, hy + r * 0.94);
+  if (inf > 0.3) {
+    faceGradient.addColorStop(0, lerpColor('#f0fdf4', '#dcfce7', inf));
+    faceGradient.addColorStop(0.58, lerpColor('#ccfbf1', '#4ade80', inf));
+    faceGradient.addColorStop(1, lerpColor('#a5f3fc', '#14532d', inf));
+  } else {
+    faceGradient.addColorStop(0, '#ffffff');
+    faceGradient.addColorStop(0.55, '#f3f8fa');
+    faceGradient.addColorStop(1, '#a9e3ec');
+  }
+  const faceInk = inf > 0.45 ? '#102a1c' : '#07111f';
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.42)';
+  ctx.shadowBlur = r * 0.18;
+  ctx.shadowOffsetY = r * 0.08;
+  ctx.fillStyle = faceGradient;
+  ctx.strokeStyle = faceInk;
+  ctx.lineWidth = Math.max(2, r * 0.105);
+  ctx.beginPath(); ctx.arc(hx, hy, r, 0, TWO_PI); ctx.fill();
+  ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
   ctx.stroke();
+  // Soft painted highlight along the forehead.
+  ctx.strokeStyle = inf > 0.3 ? 'rgba(255,255,255,0.24)' : 'rgba(255,255,255,0.78)';
+  ctx.lineWidth = Math.max(1.2, r * 0.045);
+  ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.arc(hx - r * 0.04, hy - r * 0.02, r * 0.82, Math.PI * 1.13, Math.PI * 1.62); ctx.stroke();
 
-  // Face: eyes, expressive eyebrows, mouth
-  const eyeR = Math.max(1.5, r * 0.135 * Math.max(0.25, face.eye));
-  const gazeShift = face.gaze * r * 0.24;
-  const eyeY = hy - r * 0.1;
+  // Eyes remain dark and legible against the pale face, with a natural blink every few seconds.
+  const blinkPhase = (t + Math.abs(hx) * 0.007) % 4.2;
+  const blink = blinkPhase > 4.02 ? Math.max(0.08, 1 - Math.sin(((blinkPhase - 4.02) / 0.18) * Math.PI)) : 1;
+  const eyeOpen = face.eye < 0.25 ? face.eye : face.eye * blink;
+  const eyeR = Math.max(1.5, r * 0.125 * Math.min(1.65, Math.max(0.5, eyeOpen)));
+  const gazeShift = face.gaze * r * 0.22;
+  const eyeY = hy - r * 0.10;
   const lEyeX = hx - r * 0.34 + gazeShift;
   const rEyeX = hx + r * 0.34 + gazeShift;
-
-  // Zombie glowing red/yellow eyes or crisp normal eyes
-  ctx.fillStyle = inf > 0.45 ? '#ef4444' : bodyInk;
-  if (face.eye < 0.25) {
-    // Sleeping / closed eyes line
-    ctx.lineWidth = Math.max(1.5, lineWidth * 0.45);
-    seg([lEyeX - r * 0.14, eyeY], [lEyeX + r * 0.14, eyeY]);
-    seg([rEyeX - r * 0.14, eyeY], [rEyeX + r * 0.14, eyeY]);
+  ctx.fillStyle = inf > 0.45 ? '#ef4444' : faceInk;
+  if (eyeOpen < 0.25) {
+    ctx.strokeStyle = faceInk;
+    ctx.lineWidth = Math.max(1.5, r * 0.065);
+    for (const eyeX of [lEyeX, rEyeX]) {
+      ctx.beginPath(); ctx.moveTo(eyeX - r * 0.14, eyeY);
+      ctx.quadraticCurveTo(eyeX, eyeY + r * 0.06, eyeX + r * 0.14, eyeY); ctx.stroke();
+    }
   } else {
+    ctx.beginPath(); ctx.arc(lEyeX, eyeY, eyeR, 0, TWO_PI); ctx.arc(rEyeX, eyeY, eyeR, 0, TWO_PI); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.88)';
     ctx.beginPath();
-    ctx.arc(lEyeX, eyeY, eyeR, 0, TWO_PI);
-    ctx.arc(rEyeX, eyeY, eyeR, 0, TWO_PI);
+    ctx.arc(lEyeX - eyeR * 0.28, eyeY - eyeR * 0.34, Math.max(0.65, eyeR * 0.24), 0, TWO_PI);
+    ctx.arc(rEyeX - eyeR * 0.28, eyeY - eyeR * 0.34, Math.max(0.65, eyeR * 0.24), 0, TWO_PI);
     ctx.fill();
   }
 
-  // Eyebrows for strong emotion
-  if (Math.abs(face.brow || 0) > 0.15) {
-    const tilt = (face.brow || 0) * r * 0.14;
-    ctx.strokeStyle = bodyInk;
-    ctx.lineWidth = Math.max(1.5, lineWidth * 0.42);
-    seg([lEyeX - r * 0.16, eyeY - r * 0.24 - tilt], [lEyeX + r * 0.16, eyeY - r * 0.24 + tilt]);
-    seg([rEyeX - r * 0.16, eyeY - r * 0.24 + tilt], [rEyeX + r * 0.16, eyeY - r * 0.24 - tilt]);
+  // Curved brows make fear, worry and anger read clearly in a tiny vertical frame.
+  const brow = Math.max(-1, Math.min(1, face.brow || 0));
+  if (Math.abs(brow) > 0.12 || face.smile < -0.35) {
+    ctx.strokeStyle = faceInk;
+    ctx.lineWidth = Math.max(1.6, r * 0.06);
+    for (const eyeX of [lEyeX, rEyeX]) {
+      const by = eyeY - r * 0.27;
+      ctx.beginPath(); ctx.moveTo(eyeX - r * 0.17, by + brow * r * 0.035);
+      ctx.quadraticCurveTo(eyeX, by - brow * r * 0.17, eyeX + r * 0.17, by + brow * r * 0.035);
+      ctx.stroke();
+    }
+  }
+  if (face.smile > 0.45 || brow > 0.55) {
+    ctx.fillStyle = 'rgba(251,113,133,0.16)';
+    ctx.beginPath(); ctx.arc(hx - r * 0.53, hy + r * 0.19, r * 0.105, 0, TWO_PI);
+    ctx.arc(hx + r * 0.53, hy + r * 0.19, r * 0.105, 0, TWO_PI); ctx.fill();
   }
 
-  // Mouth
+  // Mouth: a clean, high-contrast line or an animated open expression.
   const mouthY = hy + r * 0.38;
-  ctx.strokeStyle = bodyInk;
-  ctx.fillStyle = inf > 0.5 ? '#16a34a' : bodyInk;
-  ctx.lineWidth = Math.max(1.6, lineWidth * 0.48);
+  ctx.strokeStyle = faceInk;
+  ctx.fillStyle = inf > 0.5 ? '#166534' : faceInk;
+  ctx.lineWidth = Math.max(1.6, r * 0.065);
+  ctx.lineCap = 'round';
   ctx.beginPath();
   if (face.mouth > 0.22) {
-    ctx.ellipse(hx + gazeShift * 0.3, mouthY, r * 0.22, Math.max(1.2, r * 0.24 * face.mouth), 0, 0, TWO_PI);
+    ctx.ellipse(hx + gazeShift * 0.3, mouthY, r * 0.20, Math.max(1.2, r * 0.22 * face.mouth), 0, 0, TWO_PI);
     ctx.fill();
   } else {
-    ctx.moveTo(hx - r * 0.32, mouthY);
-    ctx.quadraticCurveTo(hx, mouthY + face.smile * r * 0.35, hx + r * 0.32, mouthY);
+    ctx.moveTo(hx - r * 0.31, mouthY);
+    ctx.quadraticCurveTo(hx, mouthY + face.smile * r * 0.34, hx + r * 0.31, mouthY);
     ctx.stroke();
   }
 
   if (face.tears > 0.3) {
     ctx.fillStyle = '#38bdf8';
     for (const dx of [-0.34, 0.34]) {
-      ctx.beginPath();
-      ctx.arc(hx + r * dx + gazeShift, eyeY + r * 0.32, r * 0.08, 0, TWO_PI);
-      ctx.fill();
+      const tx = hx + r * dx + gazeShift;
+      const ty = eyeY + r * 0.30;
+      ctx.beginPath(); ctx.ellipse(tx, ty, r * 0.07, r * 0.13, 0, 0, TWO_PI); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.75)';
+      ctx.beginPath(); ctx.arc(tx - r * 0.02, ty - r * 0.05, r * 0.025, 0, TWO_PI); ctx.fill();
+      ctx.fillStyle = '#38bdf8';
     }
   }
+  ctx.restore();
 
   // Accessories (shades, glasses, chains, headphones, weapons) & Hats
   drawAccessoryDrip(ctx, sk, drip, lineWidth, gazeShift);
@@ -632,8 +758,8 @@ function drawEffectsAfter(ctx, effects, L, t, sketches) {
 function floatSymbol(action, emotion) {
   if (action === 'think' || emotion === 'confused') return '?';
   if (action === 'surprised' || emotion === 'surprised' || action === 'scared' || emotion === 'scared' || action === 'wake_up' || action === 'panic') return '!';
-  if (action === 'zombie_walk' || action === 'zombie_chase' || action === 'infect' || action === 'turn_zombie') return '☣';
-  if (action === 'laugh' || action === 'celebrate') return '★';
+  if (action === 'zombie_walk' || action === 'zombie_chase' || action === 'infect' || action === 'turn_zombie') return 'â£';
+  if (action === 'laugh' || action === 'celebrate') return 'â';
   return '';
 }
 
@@ -700,7 +826,8 @@ export function renderFrame(ctx, scene, t, opts) {
   const L = layoutFor(W, H, scene.characters.length);
   const effects = scene.effects || [];
   const shaken = effects.includes('shake') || effects.includes('alarm_flash');
-  const zoom = effects.includes('zoom') ? 1 + 0.07 * progress : 1;
+  const breathingZoom = 1 + Math.sin(progress * Math.PI) * 0.012;
+  const zoom = effects.includes('zoom') ? 1 + 0.07 * progress : breathingZoom;
 
   // Lookup map for character outfits/colors from project.characters
   const charMetaMap = new Map();
@@ -789,6 +916,14 @@ export function renderFrame(ctx, scene, t, opts) {
   });
 
   drawEffectsAfter(ctx, effects, L, local, sketches);
+
+  // A restrained edge vignette gives every shot a filmic frame without obscuring the scene.
+  const vignette = ctx.createRadialGradient(W * 0.5, H * 0.45, Math.min(W, H) * 0.22, W * 0.5, H * 0.5, Math.max(W, H) * 0.78);
+  vignette.addColorStop(0, 'rgba(4,8,20,0)');
+  vignette.addColorStop(0.72, 'rgba(4,8,20,0.035)');
+  vignette.addColorStop(1, 'rgba(4,8,20,0.18)');
+  ctx.fillStyle = vignette;
+  ctx.fillRect(0, 0, W, H);
 
   if (effects.includes('impact_flash')) {
     const a = Math.max(0, 0.55 - local * 2.4);
