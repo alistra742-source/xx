@@ -28,10 +28,32 @@ export function createLlm(config) {
 
   const enabled = () => Boolean(config.llamaUrl) && config.llmEnabled;
 
+  // Every request goes to the configured OpenAI-compatible endpoint. The API key
+  // (if any) is only sent in the Authorization header and never logged.
+  function chatRequest(messages, { maxTokens, temperature, topP, signal, jsonMode = false }) {
+    const headers = { 'content-type': 'application/json' };
+    if (config.llmApiKey) headers.authorization = `Bearer ${config.llmApiKey}`;
+    return fetch(`${config.llamaUrl.replace(/\/$/, '')}/v1/chat/completions`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        model: config.llmModel,
+        messages,
+        max_tokens: maxTokens,
+        temperature,
+        top_p: topP,
+        stream: false,
+        ...(jsonMode ? { response_format: { type: 'json_object' } } : {}),
+      }),
+      signal,
+    });
+  }
+
   function buildPrompt(req) {
     const n = sceneCountFor(req.duration);
     const system = 'You write short animated stick-figure video scripts. Reply with ONE valid JSON object only, no prose, no markdown.';
     const user = [
+      `Variation id: ${req.seed || Date.now()}. Invent a fresh, original scene sequence; never reuse a generic plot or a previous answer.`,
       `User request (interpret the intent; DO NOT repeat or quote these words in narration): ${req.topic}`,
       `Story subject (not a script prompt): ${extractSubject(req.topic)}`,
       `Language for narration: ${req.language}. Tone: ${req.autoTone ? 'choose the best tone for the story' : req.tone}. Duration: ${req.duration} seconds.`,
@@ -59,19 +81,13 @@ export function createLlm(config) {
     const timeoutMs = Math.min(config.llmTimeoutMs || 45000, 30000);
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const res = await fetch(`${config.llamaUrl.replace(/\/$/, '')}/v1/chat/completions`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          messages: [
-            { role: 'system', content: 'You are a short-form film story editor. Expand an idea into one vivid, production-ready faceless-animation prompt. Return only the improved prompt, no labels or commentary.' },
-            { role: 'user', content: `Improve this idea for a roughly ${Math.max(10, Math.min(90, Number(duration) || 30))}-second faceless animated short. Keep the original premise and genre; do not force zombies or a default bedroom/alarm opening. Add a protagonist goal, specific setting and stakes, escalating obstacle, visual action, and satisfying twist or payoff. Aim for 80-130 words. Preserve names and facts the user supplied. Idea: ${String(topic).slice(0, 600)}` },
-          ],
-          max_tokens: Math.min(config.llmMaxTokens || 500, 320),
-          temperature: 0.8,
-          top_p: 0.92,
-          stream: false,
-        }),
+      const res = await chatRequest([
+        { role: 'system', content: 'You are a short-form film story editor. Expand an idea into one vivid, production-ready faceless-animation prompt. Return only the improved prompt, no labels or commentary.' },
+        { role: 'user', content: `Improve this idea for a roughly ${Math.max(10, Math.min(90, Number(duration) || 30))}-second faceless animated short. Keep the original premise and genre; do not force zombies or a default bedroom/alarm opening. Add a protagonist goal, specific setting and stakes, escalating obstacle, visual action, and satisfying twist or payoff. Aim for 80-130 words. Preserve names and facts the user supplied. Idea: ${String(topic).slice(0, 600)}` },
+      ], {
+        maxTokens: Math.min(config.llmMaxTokens || 500, 320),
+        temperature: 0.8,
+        topP: 0.92,
         signal: controller.signal,
       });
       if (!res.ok) throw new Error(`Language model responded ${res.status}`);
@@ -97,20 +113,15 @@ export function createLlm(config) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), config.llmTimeoutMs);
     try {
-      const res = await fetch(`${config.llamaUrl.replace(/\/$/, '')}/v1/chat/completions`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          messages: buildPrompt(req),
-          max_tokens: config.llmMaxTokens,
-          temperature: 0.7,
-          top_p: 0.9,
-          stream: false,
-          response_format: { type: 'json_object' },
-        }),
+      const res = await chatRequest(buildPrompt(req), {
+        maxTokens: config.llmMaxTokens,
+        // High temperature + a fresh nonce per request so the same prompt gives a new story each time.
+        temperature: 1.0,
+        topP: 0.95,
         signal: controller.signal,
+        jsonMode: true,
       });
-      if (!res.ok) throw new Error(`llama-server responded ${res.status}`);
+      if (!res.ok) throw new Error(`language model responded ${res.status}`);
       const body = await res.json();
       const text = body?.choices?.[0]?.message?.content ?? '';
       const parsed = parseJsonLoose(text);

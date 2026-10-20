@@ -6,7 +6,7 @@ import { splitNarration, subtitleCues } from '../shared/subtitles.js';
 import { solvePose } from '../shared/stickfigure.js';
 import { templateProject, extractSubject, settingFromTopic } from '../server/script/template.js';
 import { createTts } from '../server/tts.js';
-import { improvePromptLocally } from '../server/script/llm.js';
+import { improvePromptLocally, createLlm } from '../server/script/llm.js';
 import { createJobs } from '../server/jobs.js';
 
 describe('schema', () => {
@@ -205,6 +205,35 @@ test('scenes use the setting named in the topic', () => {
   const project = templateProject({ topic: 'a crew escapes from the desert', duration: 30, language: 'English', narration: true, seed: 7 });
   assert.ok(project.scenes.length > 0);
   assert.ok(project.scenes.every((s) => s.background === 'desert'));
+});
+
+test('LLM script request sends the key, model, and a per-request variation id', async () => {
+  const realFetch = globalThis.fetch;
+  const calls = [];
+  const story = {
+    title: 'Test', tone: 'funny',
+    characters: [{ id: 'hero', name: 'Hero', role: 'protagonist', color: '#ff0000', isZombie: false }],
+    scenes: [{ duration: 5, background: 'desert', narration: 'The hero finds a map.', effects: [], textOverlay: '', characters: [{ id: 'hero', action: 'walk', emotion: 'happy', isZombie: false, position: { x: 0.5, y: 0.8 }, targetX: 0.6 }] }],
+  };
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url, init });
+    return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(story) } }] }) };
+  };
+  try {
+    const llm = createLlm({ llamaUrl: 'https://api.example.com/', llmApiKey: 'k-test', llmModel: 'm-test', llmTimeoutMs: 5000, llmCooldownMs: 0, llmMaxTokens: 500, llmEnabled: true });
+    const req = { topic: 'a hero finds a map in the desert', duration: 10, tone: 'funny', autoTone: false, style: 'classic', aspectRatio: '9:16', narration: true, subtitles: false, language: 'English', seed: 4242 };
+    const { project, source } = await llm.generateScript(req);
+    assert.equal(source, 'llm');
+    assert.ok(project.scenes.length > 0);
+    assert.equal(calls[0].url, 'https://api.example.com/v1/chat/completions');
+    assert.equal(calls[0].init.headers.authorization, 'Bearer k-test');
+    const body = JSON.parse(calls[0].init.body);
+    assert.equal(body.model, 'm-test');
+    assert.ok(body.messages[1].content.includes('Variation id: 4242'));
+    assert.equal(body.temperature, 1.0);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 });
 
 test('prompt improvement works without a language model (no LLAMA_URL)', () => {

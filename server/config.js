@@ -14,9 +14,13 @@ export function loadConfig(env = process.env) {
     jobTtlMs: num(env.JOB_TTL_MINUTES, 30) * 60 * 1000,
     maxQueue: num(env.MAX_EXPORT_QUEUE, 3),
     staticDir: resolve(env.STATIC_DIR || 'dist'),
-    // Local LLM (llama.cpp llama-server running Qwen2.5-0.5B-Instruct Q4 GGUF).
+    // LLM writes every story from the user's prompt. Any OpenAI-compatible
+    // /v1/chat/completions endpoint works: a hosted API (Groq, OpenRouter, ...)
+    // via LLM_BASE_URL + LLM_API_KEY, or a self-hosted llama-server via LLAMA_URL.
     llmEnabled: env.LLM_ENABLED !== 'false',
-    llamaUrl: env.LLAMA_URL || '',
+    llamaUrl: env.LLM_BASE_URL || env.LLAMA_URL || '',
+    llmApiKey: env.LLM_API_KEY || '',
+    llmModel: env.LLM_MODEL || 'llama-3.1-8b-instant',
     llmTimeoutMs: num(env.LLM_TIMEOUT_MS, 45000),
     llmCooldownMs: num(env.LLM_COOLDOWN_MS, 120000),
     llmMaxTokens: num(env.LLM_MAX_TOKENS, 900),

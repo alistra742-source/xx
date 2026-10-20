@@ -56,7 +56,10 @@ End-to-end check against a running server: `npm run e2e:export`. It generates a 
 | `JOB_TTL_MINUTES` | `30` | Finished videos are deleted after this |
 | `MAX_EXPORT_QUEUE` | `3` | Maximum queued exports; more are rejected |
 | `LLM_ENABLED` | `true` | Set `false` to skip the model entirely |
-| `LLAMA_URL` | empty | e.g. `http://127.0.0.1:8080` for `llama-server`. Empty = no LLM |
+| `LLM_BASE_URL` | empty | OpenAI-compatible base URL, e.g. `https://api.groq.com/openai/v1`. Every story is written by this model from the user's prompt |
+| `LLM_API_KEY` | empty | API key for `LLM_BASE_URL`. Set it in Railway variables only; never commit it |
+| `LLM_MODEL` | `llama-3.1-8b-instant` | Model name sent to `LLM_BASE_URL` |
+| `LLAMA_URL` | empty | Used when `LLM_BASE_URL` is empty, e.g. `http://127.0.0.1:8080` for `llama-server`. Both empty = template generator only |
 | `LLM_TIMEOUT_MS` | `45000` | Per-request timeout for the model |
 | `LLM_COOLDOWN_MS` | `120000` | After a failure, skip the model for this long |
 | `LLM_MAX_TOKENS` | `900` | Output token cap |
@@ -78,7 +81,7 @@ export LLAMA_URL=http://127.0.0.1:8080
 
 The model only writes script/scene JSON. It never generates frames. Every request is validated, and unknown actions or effects are replaced with safe defaults. No model output is executed. The default no-model story generator interprets supported genres and story cues; it is a curated procedural fallback, not an open-ended LLM.
 
-Note: the Railway image does not include `llama-server`. To use the model on Railway, run a separate llama.cpp service and point `LLAMA_URL` at it. On a 512 MB instance, the model is only practical as a separate service.
+Note: the Railway image does not include `llama-server`. For Railway, use a hosted OpenAI-compatible API by setting `LLM_BASE_URL`, `LLM_API_KEY` and `LLM_MODEL`, or run a separate llama.cpp service and point `LLAMA_URL` at it.
 
 ## Resource limits and memory
 
