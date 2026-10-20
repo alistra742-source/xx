@@ -200,17 +200,24 @@ export async function createTts(config = {}) {
   }
 
   // 'auto': paid/keyed neural voice first; offline eSpeak NG next; network Google TTS last.
-  if (await neural.available()) {
-    return { name: neural.name, enabled: true, synth: (t, o, l) => neural.synth(t, o, l) };
-  }
   const esp = espeak(espeakBin, timeout);
   const hasEsp = await esp.available();
   const gt = gtts(timeout);
+  const useNeural = await neural.available();
 
+  // Free voices are the fallback: a failing ElevenLabs call (bad key, quota, network)
+  // must never stop narration, so the user still gets voiced output.
   return {
-    name: hasEsp ? 'espeak-ng' : 'google-tts',
+    name: useNeural ? neural.name : (hasEsp ? 'espeak-ng' : 'google-tts'),
     enabled: true,
     async synth(text, outPath, lang) {
+      if (useNeural) {
+        try {
+          return await neural.synth(text, outPath, lang);
+        } catch (err) {
+          console.warn(`ElevenLabs narration failed, falling back to free voice: ${err.message}`);
+        }
+      }
       if (hasEsp) {
         try { return await esp.synth(text, outPath, lang); } catch { /* fall through to gtts */ }
       }

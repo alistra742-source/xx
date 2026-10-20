@@ -4,8 +4,9 @@ import { ACTIONS, BACKGROUNDS, LIMITS } from '../shared/constants.js';
 import { normalizeProject, validateGenerateRequest, ValidationError, sceneCountFor, normalizeAction, inferStoryMeta } from '../shared/schema.js';
 import { splitNarration, subtitleCues } from '../shared/subtitles.js';
 import { solvePose } from '../shared/stickfigure.js';
-import { templateProject, extractSubject } from '../server/script/template.js';
+import { templateProject, extractSubject, settingFromTopic } from '../server/script/template.js';
 import { createTts } from '../server/tts.js';
+import { improvePromptLocally } from '../server/script/llm.js';
 import { createJobs } from '../server/jobs.js';
 
 describe('schema', () => {
@@ -195,4 +196,19 @@ describe('job queue', () => {
     jobs.submit(async () => ({}));
     jobs.submit(async () => ({}));
   });
+});
+
+test('scenes use the setting named in the topic', () => {
+  assert.equal(settingFromTopic('a zombie outbreak at my school'), 'school');
+  assert.equal(settingFromTopic('lost in the desert with a camel'), 'desert');
+  assert.equal(settingFromTopic('a heist at the bank'), null);
+  const project = templateProject({ topic: 'a crew escapes from the desert', duration: 30, language: 'English', narration: true, seed: 7 });
+  assert.ok(project.scenes.length > 0);
+  assert.ok(project.scenes.every((s) => s.background === 'desert'));
+});
+
+test('prompt improvement works without a language model (no LLAMA_URL)', () => {
+  const improved = improvePromptLocally('a robot learns to dance', { duration: 30 });
+  assert.ok(improved.startsWith('a robot learns to dance.'));
+  assert.ok(improved.length >= 40);
 });

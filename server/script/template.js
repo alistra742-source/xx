@@ -3,7 +3,43 @@
 // Turn any prompt into a vivid, multi-scene animated story with randomized hooks,
 // character casts with drip, multi-character choreography, and zero prompt-reading.
 import { sceneCountFor, defaultDripFor, inferStoryMeta } from '../../shared/schema.js';
-import { CHARACTER_COLORS, ZOMBIE_COLOR } from '../../shared/constants.js';
+import { CHARACTER_COLORS, ZOMBIE_COLOR, BACKGROUNDS, BACKGROUND_ALIASES } from '../../shared/constants.js';
+
+// Topic words that name a location, so every scene is drawn in the story's setting.
+const SETTING_WORDS = {
+  desert: 'desert', sand: 'desert', dune: 'desert', dunes: 'desert', sahara: 'desert',
+  forest: 'forest', woods: 'forest', jungle: 'forest', swamp: 'forest', camp: 'forest',
+  school: 'school', classroom: 'school', college: 'school', university: 'school', campus: 'school',
+  office: 'office', workplace: 'office', company: 'office', corporate: 'office',
+  city: 'city', downtown: 'city', town: 'city', metro: 'city', subway: 'city',
+  street: 'street', road: 'street', highway: 'street', alley: 'street',
+  battlefield: 'battlefield', battle: 'battlefield', war: 'battlefield', trench: 'battlefield',
+  horror: 'horror', graveyard: 'horror', cemetery: 'horror', haunted: 'horror', crypt: 'horror',
+  hills: 'landscape', field: 'landscape', meadow: 'landscape', mountain: 'landscape', countryside: 'landscape', landscape: 'landscape',
+  rooftop: 'rooftop', roof: 'rooftop', skyscraper: 'rooftop',
+  bunker: 'bunker', shelter: 'bunker', basement: 'bunker', underground: 'bunker', cellar: 'bunker',
+  lab: 'lab', laboratory: 'lab', hospital: 'lab', clinic: 'lab',
+  bedroom: 'bedroom', house: 'bedroom', home: 'bedroom', apartment: 'bedroom', kitchen: 'bedroom',
+  studio: 'white',
+};
+
+/** Returns the first setting named in the topic, or null. */
+export function settingFromTopic(topic) {
+  const words = String(topic || '').toLowerCase().split(/[^a-z]+/).filter(Boolean);
+  for (const w of words) {
+    if (SETTING_WORDS[w]) return SETTING_WORDS[w];
+    if (BACKGROUNDS.includes(w)) return w;
+    if (BACKGROUND_ALIASES[w]) return BACKGROUND_ALIASES[w];
+  }
+  return null;
+}
+
+/** Forces every scene into the setting the topic names; leaves scenes alone when none is named. */
+function applyTopicSetting(scenes, topic) {
+  const setting = settingFromTopic(topic);
+  if (!setting) return scenes;
+  return scenes.map((scene) => ({ ...scene, background: setting }));
+}
 
 function makeRng(seed) {
   let s = (Number(seed) >>> 0) || (Date.now() >>> 0) || 123456789;
@@ -727,7 +763,7 @@ export function templateProject(req) {
     narration: req.narration !== false,
     subtitles: { enabled: req.subtitles !== false },
     characters: built.characters,
-    scenes: built.scenes,
+    scenes: applyTopicSetting(built.scenes, req.topic),
     seed: req.seed,
   };
 }

@@ -6,6 +6,22 @@ import { ACTIONS, BACKGROUNDS, EFFECTS, EMOTIONS, TONES, HATS, TOPS, ACCESSORIES
 import { parseJsonLoose, normalizeProject, sceneCountFor } from '../../shared/schema.js';
 import { extractSubject } from './template.js';
 
+/**
+ * Offline prompt expander used when no language model is configured, so the
+ * "Improve prompt" button always works. It keeps the user's premise and adds
+ * structure (goal, obstacle, escalation, payoff) without forcing a genre.
+ */
+export function improvePromptLocally(topic, { duration = 30 } = {}) {
+  const premise = String(topic || '').trim().replace(/\s+/g, ' ').replace(/[.!?]+$/, '');
+  const seconds = Math.max(10, Math.min(90, Number(duration) || 30));
+  return [
+    `${premise}.`,
+    `Open on a striking, concrete moment that shows the main character's goal and why it matters.`,
+    `Escalate with a specific obstacle that forces a choice, with visible stakes in every scene.`,
+    `Build to a decisive action in the final act, then close on a satisfying payoff in about ${seconds} seconds.`,
+  ].join(' ');
+}
+
 export function createLlm(config) {
   let cooldownUntil = 0;
   let lastError = null;

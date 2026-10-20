@@ -11,7 +11,7 @@ import { normalizeProject, validateGenerateRequest, ValidationError } from '../s
 import { loadConfig } from './config.js';
 import { createJobs } from './jobs.js';
 import { renderMp4, frameSize } from './exporter.js';
-import { createLlm } from './script/llm.js';
+import { createLlm, improvePromptLocally } from './script/llm.js';
 import { createScriptService } from './script/index.js';
 import { createTts } from './tts.js';
 
@@ -118,9 +118,16 @@ export async function createApp(overrides = {}) {
       const body = await readJson(req);
       const topic = typeof body.topic === 'string' ? body.topic.trim().slice(0, LIMITS.maxTopicChars) : '';
       if (topic.length < 3) throw new HttpError(400, 'Enter a topic before improving the prompt.');
-      if (!config.llamaUrl || !config.llmEnabled) throw new HttpError(503, 'Prompt improvement needs a configured language model (LLAMA_URL). The story templates will still interpret prompts locally.');
-      const improved = await llm.improvePrompt(topic, { duration: body.duration });
-      return send(res, 200, { prompt: improved, source: 'llm' });
+      if (!config.llamaUrl || !config.llmEnabled) {
+        return send(res, 200, { prompt: improvePromptLocally(topic, { duration: body.duration }), source: 'local' });
+      }
+      try {
+        const improved = await llm.improvePrompt(topic, { duration: body.duration });
+        return send(res, 200, { prompt: improved, source: 'llm' });
+      } catch (err) {
+        console.warn(`Language model prompt improvement failed, using local expander: ${err.message}`);
+        return send(res, 200, { prompt: improvePromptLocally(topic, { duration: body.duration }), source: 'local' });
+      }
     }
 
     if (req.method === 'POST' && path === '/api/exports') {
