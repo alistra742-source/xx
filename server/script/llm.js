@@ -11,15 +11,10 @@ import { extractSubject } from './template.js';
  * "Improve prompt" button always works. It keeps the user's premise and adds
  * structure (goal, obstacle, escalation, payoff) without forcing a genre.
  */
-export function improvePromptLocally(topic, { duration = 30 } = {}) {
-  const premise = String(topic || '').trim().replace(/\s+/g, ' ').replace(/[.!?]+$/, '');
-  const seconds = Math.max(10, Math.min(90, Number(duration) || 30));
-  return [
-    `${premise}.`,
-    `Open on a striking, concrete moment that shows the main character's goal and why it matters.`,
-    `Escalate with a specific obstacle that forces a choice, with visible stakes in every scene.`,
-    `Build to a decisive action in the final act, then close on a satisfying payoff in about ${seconds} seconds.`,
-  ].join(' ');
+export function improvePromptLocally(topic) {
+  // Without a configured model there is no real expansion to offer, so keep the
+  // user's own words. Appending fixed text would add the same lines to every story.
+  return String(topic || '').trim().replace(/\s+/g, ' ');
 }
 
 export function createLlm(config) {

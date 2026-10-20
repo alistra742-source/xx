@@ -119,14 +119,14 @@ export async function createApp(overrides = {}) {
       const topic = typeof body.topic === 'string' ? body.topic.trim().slice(0, LIMITS.maxTopicChars) : '';
       if (topic.length < 3) throw new HttpError(400, 'Enter a topic before improving the prompt.');
       if (!config.llamaUrl || !config.llmEnabled) {
-        return send(res, 200, { prompt: improvePromptLocally(topic, { duration: body.duration }), source: 'local' });
+        return send(res, 200, { prompt: improvePromptLocally(topic), source: 'local' });
       }
       try {
         const improved = await llm.improvePrompt(topic, { duration: body.duration });
         return send(res, 200, { prompt: improved, source: 'llm' });
       } catch (err) {
-        console.warn(`Language model prompt improvement failed, using local expander: ${err.message}`);
-        return send(res, 200, { prompt: improvePromptLocally(topic, { duration: body.duration }), source: 'local' });
+        console.warn(`Language model prompt improvement failed, keeping prompt as written: ${err.message}`);
+        return send(res, 200, { prompt: improvePromptLocally(topic), source: 'local' });
       }
     }
 

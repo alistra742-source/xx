@@ -247,8 +247,7 @@ test('GROQ_API alone selects Groq and the fastest small model', () => {
   assert.equal(explicit.llmApiKey, 'k');
 });
 
-test('prompt improvement works without a language model (no LLAMA_URL)', () => {
-  const improved = improvePromptLocally('a robot learns to dance', { duration: 30 });
-  assert.ok(improved.startsWith('a robot learns to dance.'));
-  assert.ok(improved.length >= 40);
+test('prompt improvement without a model keeps the user prompt and adds no fixed text', () => {
+  assert.equal(improvePromptLocally('  a robot   learns to dance '), 'a robot learns to dance');
+  assert.equal(improvePromptLocally('Heist bank'), 'Heist bank');
 });

@@ -129,7 +129,9 @@ export default function App() {
     try {
       const result = await api('/api/improve-prompt', { method: 'POST', body: { topic: form.topic, duration: form.duration } });
       setField('topic', result.prompt);
-      setNotice('Prompt improved. Review it, then make your story.');
+      setNotice(result.source === 'llm'
+        ? 'Prompt improved by AI. Review it, then make your story.'
+        : 'AI is not active on this server (set GROQ_API and redeploy), so your prompt was kept as written.');
     } catch (err) {
       setError(err.message);
     } finally {
