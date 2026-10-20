@@ -512,53 +512,115 @@ function drawFigure(ctx, sk, { ink, lineWidth, face, shadowColor, scale, drip, i
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
 
-  // Clean dark outer contour gives the illustrated figures the thick inked edge
-  // of the supplied reference instead of the thin, wire-like original strokes.
-  const outlineW = lineWidth * 1.95;
-  ctx.strokeStyle = '#101522';
-  ctx.lineWidth = outlineW;
-  seg(sk.lHip, sk.lKnee); seg(sk.lKnee, sk.lFoot);
-  seg(sk.rHip, sk.rKnee); seg(sk.rKnee, sk.rFoot);
-  curve(sk.hip, sk.chest, sk.neck);
-  seg(sk.lShoulder, sk.lElbow); seg(sk.lElbow, sk.lHand);
-  seg(sk.rShoulder, sk.rElbow); seg(sk.rElbow, sk.rHand);
+  // Limbs are drawn as tapered, filled capsules (thick at the joint nearest the
+  // body, thinner at the far end) with an inked contour, so figures read as
+  // illustrated characters instead of wire sticks.
+  const INK = '#101522';
+  const lw = lineWidth;
+  const taper = (a, b, r0, r1) => {
+    const dx = b[0] - a[0];
+    const dy = b[1] - a[1];
+    const len = Math.hypot(dx, dy) || 1;
+    const nx = -dy / len;
+    const ny = dx / len;
+    ctx.beginPath();
+    ctx.arc(a[0], a[1], r0, 0, TWO_PI);
+    ctx.moveTo(b[0] + r1, b[1]);
+    ctx.arc(b[0], b[1], r1, 0, TWO_PI);
+    ctx.moveTo(a[0] + nx * r0, a[1] + ny * r0);
+    ctx.lineTo(b[0] + nx * r1, b[1] + ny * r1);
+    ctx.lineTo(b[0] - nx * r1, b[1] - ny * r1);
+    ctx.lineTo(a[0] - nx * r0, a[1] - ny * r0);
+    ctx.closePath();
+    ctx.fill('nonzero');
+  };
+  const R = {
+    thigh: [lw * 1.0, lw * 0.8], shin: [lw * 0.8, lw * 0.58],
+    upper: [lw * 0.66, lw * 0.54], fore: [lw * 0.54, lw * 0.44],
+  };
+  const limbs = [
+    [sk.lHip, sk.lKnee, R.thigh, 'leg'], [sk.lKnee, sk.lFoot, R.shin, 'leg'],
+    [sk.rHip, sk.rKnee, R.thigh, 'leg'], [sk.rKnee, sk.rFoot, R.shin, 'leg'],
+    [sk.lShoulder, sk.lElbow, R.upper, 'arm'], [sk.lElbow, sk.lHand, R.fore, 'arm'],
+    [sk.rShoulder, sk.rElbow, R.upper, 'arm'], [sk.rElbow, sk.rHand, R.fore, 'arm'],
+  ];
+  const dressed = drip?.top && drip.top !== 'none';
+  const skin = inf > 0 ? lerpColor('#f8fafc', ZOMBIE_COLOR, Math.min(1, inf * 1.1)) : '#f8fafc';
+  const pants = lerpColor(dressed ? lerpColor(drip.outfitColor || '#3b82f6', '#172033', 0.78) : '#e8eef3', '#233b28', inf);
+    const outlinePad = lw * 0.3;
 
-  // Main limb pass: back limbs, torso spine, clothes drip, front limbs
-  ctx.strokeStyle = '#f8fafc';
-  ctx.fillStyle = '#f8fafc';
-  ctx.lineWidth = lineWidth * 1.2;
-
-  // Legs
-  seg(sk.lHip, sk.lKnee); seg(sk.lKnee, sk.lFoot);
-  seg(sk.rHip, sk.rKnee); seg(sk.rKnee, sk.rFoot);
-  // Spine
+  ctx.fillStyle = INK;
+  for (const [a, b, [r0, r1]] of limbs) taper(a, b, r0 + outlinePad, r1 + outlinePad);
+  // Spine / neck contour
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = lw * 1.95;
   curve(sk.hip, sk.chest, sk.neck);
-  // Back arm
-  seg(sk.lShoulder, sk.lElbow); seg(sk.lElbow, sk.lHand);
+
+  // Legs (pants) then spine, back arm
+  const fillLimbs = (kind, order) => {
+    for (const i of order) {
+      const [a, b, [r0, r1], k] = limbs[i];
+      if (k !== kind) continue;
+      ctx.fillStyle = kind === 'leg' ? pants : skin;
+      taper(a, b, r0, r1);
+      // Soft highlight down the lit side of each segment
+      ctx.strokeStyle = kind === 'leg' ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.55)';
+      ctx.lineWidth = Math.max(1, lw * 0.18);
+      const dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy) || 1;
+      const ox = (-dy / len) * r0 * 0.4, oy = (dx / len) * r0 * 0.4;
+      seg([a[0] + ox, a[1] + oy], [b[0] + ox * (r1 / r0), b[1] + oy * (r1 / r0)]);
+    }
+  };
+  fillLimbs('leg', [0, 1, 2, 3]);
+  // Pelvis cap hides the leg seam at the hip
+  ctx.fillStyle = pants;
+  ctx.beginPath(); ctx.arc(sk.hip[0], sk.hip[1], lw * 1.15, 0, TWO_PI); ctx.fill();
+  ctx.strokeStyle = skin;
+  ctx.lineWidth = lw * 1.2;
+  curve(sk.hip, sk.chest, sk.neck);
+  fillLimbs('arm', [4, 5]);
 
   // Draw top clothing / drip over torso
   drawTopDrip(ctx, sk, drip, lineWidth, bodyInk);
 
   // Front arm over torso garment
-  ctx.strokeStyle = bodyInk;
-  ctx.lineWidth = lineWidth;
-  seg(sk.rShoulder, sk.rElbow); seg(sk.rElbow, sk.rHand);
+  fillLimbs('arm', [6, 7]);
 
-  // Soft mitten-like hands and rounded sneakers make the characters read as
-  // illustrated people rather than plain articulated wire figures.
+  // Mitten hands.
   const glove = drip?.outfitColor || '#e9eef2';
   ctx.fillStyle = glove;
-  ctx.strokeStyle = '#101522';
-  ctx.lineWidth = Math.max(1.5, lineWidth * 0.32);
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = Math.max(1.5, lw * 0.32);
   for (const p of [sk.lHand, sk.rHand]) {
-    ctx.beginPath(); ctx.ellipse(p[0], p[1], lineWidth * 1.45, lineWidth * 1.18, 0, 0, TWO_PI); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(p[0], p[1], lw * 1.2, lw * 1.0, 0, 0, TWO_PI); ctx.fill(); ctx.stroke();
   }
-  const shoeColor = drip?.top && drip.top !== 'none' ? (drip.accentColor || bodyInk) : bodyInk;
-  ctx.strokeStyle = shoeColor;
-  ctx.lineWidth = lineWidth * 1.15;
+
+  // Sneakers: rounded shoe with a light sole and toe cap, pointing the way the figure faces.
+  const shoeColor = dressed ? (drip.accentColor || bodyInk) : bodyInk;
   const fDir = sk.facing || 1;
+  const shoeL = scale * 0.085;
+  const shoeH = scale * 0.036;
   for (const p of [sk.lFoot, sk.rFoot]) {
-    seg([p[0] - fDir * scale * 0.025, p[1]], [p[0] + fDir * scale * 0.055, p[1]]);
+    const x0 = p[0] - fDir * shoeL * 0.32;
+    const x1 = p[0] + fDir * shoeL * 0.68;
+    const top = p[1] - shoeH * 0.55;
+    const bot = p[1] + shoeH * 0.55;
+    ctx.beginPath();
+    ctx.moveTo(x0, top);
+    ctx.lineTo(p[0] + fDir * shoeL * 0.2, top);
+    ctx.quadraticCurveTo(p[0] + fDir * shoeL * 0.55, top, x1, p[1] + shoeH * 0.1);
+    ctx.quadraticCurveTo(x1 + fDir * shoeH * 0.15, bot, x1 - fDir * shoeH * 0.4, bot);
+    ctx.lineTo(x0, bot);
+    ctx.quadraticCurveTo(x0 - fDir * shoeH * 0.35, p[1], x0, top);
+    ctx.closePath();
+    ctx.fillStyle = shoeColor;
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = Math.max(1.5, lw * 0.3);
+    ctx.fill(); ctx.stroke();
+    // sole
+    ctx.strokeStyle = 'rgba(248,250,252,0.9)';
+    ctx.lineWidth = Math.max(1.2, shoeH * 0.22);
+    ctx.beginPath(); ctx.moveTo(x0, bot - shoeH * 0.1); ctx.lineTo(x1 - fDir * shoeH * 0.4, bot - shoeH * 0.1); ctx.stroke();
   }
 
   // Soft porcelain face with an inked edge, cheek glow and tiny moving eye blinks.
