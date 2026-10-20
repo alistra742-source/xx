@@ -23,6 +23,13 @@ function run(cmd, args, timeoutMs) {
   });
 }
 
+// ElevenLabs MP3s usually start with an ID3 tag, not a raw frame sync, so accept both.
+function isMp3(buf) {
+  if (buf.length < 128) return false;
+  if (buf[0] === 0x49 && buf[1] === 0x44 && buf[2] === 0x33) return true; // 'ID3'
+  return buf[0] === 0xff && (buf[1] & 0xe0) === 0xe0;
+}
+
 function langCode(lang = 'English') {
   const s = String(lang || 'en').toLowerCase().trim();
   const map = {
@@ -90,7 +97,7 @@ const gtts = (timeoutMs) => ({
     await writeFile(mp3Path, Buffer.concat(buffers));
     // Re-open and validate the provider's returned bytes before exposing an audio file.
     const mp3 = await readFile(mp3Path);
-    if (mp3.length < 128 || mp3[0] !== 0xff || (mp3[1] & 0xe0) !== 0xe0) {
+    if (!isMp3(mp3)) {
       throw new Error('Google TTS response was not a valid MP3 stream');
     }
     return mp3Path;
@@ -127,7 +134,7 @@ const elevenLabs = (config, timeoutMs) => ({
       const type = res.headers.get('content-type') || '';
       if (!type.toLowerCase().includes('audio')) throw new Error(`ElevenLabs returned ${type || 'no content type'}, expected audio`);
       const audio = Buffer.from(await res.arrayBuffer());
-      if (audio.length < 128 || audio[0] !== 0xff || (audio[1] & 0xe0) !== 0xe0) throw new Error('ElevenLabs returned an invalid MP3 stream');
+      if (!isMp3(audio)) throw new Error('ElevenLabs returned an invalid MP3 stream');
       const mp3Path = `${outPath}.mp3`;
       await writeFile(mp3Path, audio);
       return mp3Path;
@@ -218,10 +225,12 @@ export async function createTts(config = {}) {
           console.warn(`ElevenLabs narration failed, falling back to free voice: ${err.message}`);
         }
       }
-      if (hasEsp) {
-        try { return await esp.synth(text, outPath, lang); } catch { /* fall through to gtts */ }
+      try {
+        return await gt.synth(text, outPath, lang);
+      } catch (err) {
+        if (!hasEsp) throw err;
       }
-      return gt.synth(text, outPath, lang);
+      return esp.synth(text, outPath, lang);
     },
   };
 }

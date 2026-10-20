@@ -18,6 +18,10 @@ export const BACKGROUND_INFO = {
   rooftop: { dark: true, ground: 0.78 },
   bunker: { dark: true, ground: 0.82 },
   lab: { dark: true, ground: 0.82 },
+  space: { dark: true, ground: 0.8 },
+  beach: { dark: false, ground: 0.78 },
+  snow: { dark: false, ground: 0.8 },
+  castle: { dark: true, ground: 0.8 },
 };
 
 /** Shared furniture anchors: actors and set dressing use the same geometry. */
@@ -403,6 +407,135 @@ export function drawBackground(ctx, name, W, H, t = 0) {
       rect(ctx, '#334155', 0, groundY - 14, W, 14);
       rect(ctx, '#1e293b', 0, groundY, W, H - groundY);
       roundRect(ctx, '#475569', W * 0.08, groundY - H * 0.14, W * 0.16, H * 0.14, 4);
+      break;
+    }
+
+    case 'space': {
+      // Alien moon surface under a starfield, ringed planet and a distant nebula.
+      rect(ctx, vGrad(ctx, 0, groundY, [[0, '#02030a'], [0.6, '#0b0f2e'], [1, '#1b1146']]), 0, 0, W, groundY);
+      circle(ctx, 'rgba(168,85,247,0.14)', W * 0.3, H * 0.25, Math.min(W, H) * 0.35);
+      drawStars(ctx, W, groundY, rnd, 90, t);
+      const px = W * 0.76, py = H * 0.2, pr = Math.min(W, H) * 0.09;
+      circle(ctx, '#f97316', px, py, pr);
+      circle(ctx, 'rgba(0,0,0,0.28)', px + pr * 0.3, py + pr * 0.2, pr * 0.82);
+      ctx.strokeStyle = 'rgba(253,230,138,0.7)';
+      ctx.lineWidth = Math.max(2, pr * 0.1);
+      ctx.beginPath(); ctx.ellipse(px, py, pr * 1.7, pr * 0.4, -0.35, 0, Math.PI * 2); ctx.stroke();
+      // Far crater ridge
+      poly(ctx, '#2a2550', [[0, groundY], [0, groundY - H * 0.06], [W * 0.2, groundY - H * 0.1], [W * 0.45, groundY - H * 0.05], [W * 0.7, groundY - H * 0.11], [W, groundY - H * 0.06], [W, groundY]]);
+      rect(ctx, vGrad(ctx, groundY, H, [[0, '#4b4a6b'], [1, '#26253f']]), 0, groundY, W, H - groundY);
+      for (let i = 0; i < 6; i++) {
+        const cx = rnd() * W, cy = groundY + (H - groundY) * (0.25 + rnd() * 0.6);
+        ctx.fillStyle = 'rgba(0,0,0,0.25)';
+        ctx.beginPath(); ctx.ellipse(cx, cy, W * 0.05, H * 0.012, 0, 0, Math.PI * 2); ctx.fill();
+      }
+      // Crashed rocket
+      const rx = W * 0.1;
+      poly(ctx, '#e2e8f0', [[rx, groundY], [rx + W * 0.05, groundY - H * 0.2], [rx + W * 0.1, groundY]]);
+      circle(ctx, '#38bdf8', rx + W * 0.05, groundY - H * 0.1, W * 0.014);
+      poly(ctx, '#ef4444', [[rx - W * 0.015, groundY], [rx + W * 0.012, groundY - H * 0.06], [rx + W * 0.02, groundY]]);
+      break;
+    }
+
+    case 'beach': {
+      rect(ctx, vGrad(ctx, 0, groundY, [[0, '#38bdf8'], [0.7, '#bae6fd'], [1, '#fef3c7']]), 0, 0, W, groundY);
+      circle(ctx, 'rgba(254,240,138,0.4)', W * 0.2, H * 0.16, Math.min(W, H) * 0.13);
+      circle(ctx, '#fde047', W * 0.2, H * 0.16, Math.min(W, H) * 0.065);
+      // Clouds drifting
+      for (let i = 0; i < 3; i++) {
+        const cx = ((i * 0.37 + t * 0.01) % 1.2) * W - W * 0.1, cy = H * (0.1 + i * 0.07);
+        circle(ctx, 'rgba(255,255,255,0.85)', cx, cy, W * 0.04);
+        circle(ctx, 'rgba(255,255,255,0.85)', cx + W * 0.04, cy + 4, W * 0.05);
+        circle(ctx, 'rgba(255,255,255,0.85)', cx + W * 0.09, cy, W * 0.035);
+      }
+      // Sea with moving wave lines
+      const seaTop = groundY - H * 0.14;
+      rect(ctx, vGrad(ctx, seaTop, groundY, [[0, '#0ea5e9'], [1, '#22d3ee']]), 0, seaTop, W, groundY - seaTop);
+      ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+      ctx.lineWidth = 2;
+      for (let r = 0; r < 3; r++) {
+        ctx.beginPath();
+        for (let x = 0; x <= W; x += 12) {
+          const y = seaTop + (groundY - seaTop) * (0.25 + r * 0.28) + Math.sin(x * 0.03 + t * 1.5 + r) * 3;
+          if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+      }
+      // Sand
+      rect(ctx, vGrad(ctx, groundY, H, [[0, '#fde68a'], [1, '#f2c879']]), 0, groundY, W, H - groundY);
+      rect(ctx, 'rgba(255,255,255,0.7)', 0, groundY - 3, W, 4);
+      // Palm tree
+      const tx = W * 0.86;
+      ctx.strokeStyle = '#92400e'; ctx.lineWidth = Math.max(6, W * 0.015); ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(tx, groundY + H * 0.04); ctx.quadraticCurveTo(tx - W * 0.03, groundY - H * 0.2, tx + W * 0.01, groundY - H * 0.36); ctx.stroke();
+      ctx.strokeStyle = '#16a34a'; ctx.lineWidth = Math.max(5, W * 0.012);
+      for (const a of [-2.7, -2.1, -1.5, -0.9, -0.3]) {
+        const sway = Math.sin(t * 1.4 + a) * 0.06;
+        const ex = tx + W * 0.01 + Math.cos(a + sway) * W * 0.11, ey = groundY - H * 0.36 + Math.sin(a + sway) * H * 0.09 + H * 0.05;
+        ctx.beginPath(); ctx.moveTo(tx + W * 0.01, groundY - H * 0.36); ctx.quadraticCurveTo((tx + ex) / 2, groundY - H * 0.42, ex, ey); ctx.stroke();
+      }
+      // Umbrella
+      const ux = W * 0.12;
+      rect(ctx, '#78350f', ux - 2, groundY - H * 0.12, 4, H * 0.13);
+      poly(ctx, '#ef4444', [[ux - W * 0.09, groundY - H * 0.12], [ux, groundY - H * 0.2], [ux + W * 0.09, groundY - H * 0.12]]);
+      poly(ctx, '#fef2f2', [[ux - W * 0.03, groundY - H * 0.12], [ux, groundY - H * 0.2], [ux + W * 0.03, groundY - H * 0.12]]);
+      break;
+    }
+
+    case 'snow': {
+      rect(ctx, vGrad(ctx, 0, groundY, [[0, '#94a3b8'], [0.6, '#cbd5e1'], [1, '#f1f5f9']]), 0, 0, W, groundY);
+      circle(ctx, 'rgba(255,255,255,0.5)', W * 0.78, H * 0.16, Math.min(W, H) * 0.07);
+      // Mountains with snowcaps
+      const peaks = [[0.1, 0.34], [0.32, 0.46], [0.58, 0.38], [0.82, 0.5]];
+      for (const [px, ph] of peaks) {
+        const x = W * px, h = H * ph, w = W * 0.3;
+        poly(ctx, '#64748b', [[x - w, groundY], [x, groundY - h], [x + w, groundY]]);
+        poly(ctx, '#f8fafc', [[x - w * 0.28, groundY - h * 0.72], [x, groundY - h], [x + w * 0.28, groundY - h * 0.72], [x + w * 0.1, groundY - h * 0.8], [x, groundY - h * 0.7], [x - w * 0.1, groundY - h * 0.78]]);
+      }
+      rect(ctx, vGrad(ctx, groundY, H, [[0, '#f8fafc'], [1, '#dbeafe']]), 0, groundY, W, H - groundY);
+      // Pine trees
+      for (const [fx, sc] of [[0.06, 1.1], [0.16, 0.8], [0.9, 1.0], [0.97, 0.7]]) {
+        const x = W * fx, base = groundY + H * 0.02, th = H * 0.26 * sc;
+        rect(ctx, '#78350f', x - 4, base - H * 0.03, 8, H * 0.03);
+        for (let k = 0; k < 3; k++) {
+          const w = W * 0.05 * sc * (1 - k * 0.22), y = base - H * 0.03 - k * th * 0.28;
+          poly(ctx, '#14532d', [[x - w, y], [x, y - th * 0.38], [x + w, y]]);
+          poly(ctx, '#f8fafc', [[x - w * 0.55, y - th * 0.14], [x, y - th * 0.38], [x + w * 0.55, y - th * 0.14]]);
+        }
+      }
+      // Falling snow
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      for (let i = 0; i < 70; i++) {
+        const x = (rnd() * W + Math.sin(t + i) * 10 + W) % W;
+        const y = ((rnd() * H + t * (40 + (i % 5) * 14)) % H);
+        ctx.beginPath(); ctx.arc(x, y, 1.4 + (i % 3), 0, Math.PI * 2); ctx.fill();
+      }
+      break;
+    }
+
+    case 'castle': {
+      rect(ctx, vGrad(ctx, 0, groundY, [[0, '#1e1b4b'], [0.55, '#6d28d9'], [1, '#f59e0b']]), 0, 0, W, groundY);
+      circle(ctx, '#fef3c7', W * 0.72, H * 0.2, Math.min(W, H) * 0.06);
+      drawStars(ctx, W, groundY * 0.4, rnd, 30, t);
+      // Rolling hills
+      poly(ctx, '#312e81', [[0, groundY], [0, groundY - H * 0.1], [W * 0.3, groundY - H * 0.16], [W * 0.6, groundY - H * 0.08], [W, groundY - H * 0.14], [W, groundY]]);
+      // Castle: keep, towers, gate
+      const cx = W * 0.5, cw = W * 0.5, base = groundY - H * 0.04;
+      rect(ctx, '#3b3a5c', cx - cw / 2, base - H * 0.3, cw, H * 0.3);
+      for (let i = 0; i < 9; i++) rect(ctx, '#3b3a5c', cx - cw / 2 + i * (cw / 8.4), base - H * 0.34, cw / 16, H * 0.04);
+      for (const sx of [-cw / 2, cw / 2 - W * 0.07]) {
+        rect(ctx, '#4a4975', cx + sx, base - H * 0.5, W * 0.07, H * 0.5);
+        poly(ctx, '#7f1d1d', [[cx + sx - 6, base - H * 0.5], [cx + sx + W * 0.035, base - H * 0.62], [cx + sx + W * 0.07 + 6, base - H * 0.5]]);
+        rect(ctx, '#fde047', cx + sx + W * 0.028, base - H * 0.4, W * 0.014, H * 0.045);
+      }
+      roundRect(ctx, '#1c1917', cx - W * 0.05, base - H * 0.16, W * 0.1, H * 0.16, 30);
+      // Banner flutter
+      const flap = Math.sin(t * 3) * 6;
+      rect(ctx, '#94a3b8', cx - 2, base - H * 0.5, 4, H * 0.2);
+      poly(ctx, '#dc2626', [[cx + 2, base - H * 0.5], [cx + W * 0.06, base - H * 0.48 + flap], [cx + 2, base - H * 0.44]]);
+      // Grass + dirt path
+      rect(ctx, vGrad(ctx, groundY, H, [[0, '#365314'], [1, '#1a2e05']]), 0, groundY, W, H - groundY);
+      poly(ctx, '#78716c', [[cx - W * 0.04, groundY - H * 0.04], [cx + W * 0.04, groundY - H * 0.04], [cx + W * 0.2, H], [cx - W * 0.2, H]]);
       break;
     }
 

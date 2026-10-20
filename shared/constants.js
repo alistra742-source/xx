@@ -42,6 +42,7 @@ export const BACKGROUNDS = [
   'white', 'black', 'bedroom', 'street', 'city', 'school', 'office',
   'forest', 'desert', 'battlefield', 'horror', 'landscape',
   'rooftop', 'bunker', 'lab',
+  'space', 'beach', 'snow', 'castle',
 ];
 
 export const BACKGROUND_ALIASES = {
@@ -58,6 +59,10 @@ export const BACKGROUND_ALIASES = {
   roof: 'rooftop', building_top: 'rooftop',
   basement: 'bunker', shelter: 'bunker',
   laboratory: 'lab', hospital: 'lab',
+  galaxy: 'space', moon: 'space', planet: 'space', spaceship: 'space', alien: 'space', cosmos: 'space',
+  ocean: 'beach', sea: 'beach', island: 'beach', shore: 'beach', pirate: 'beach', coast: 'beach',
+  winter: 'snow', arctic: 'snow', ice: 'snow', blizzard: 'snow', mountain: 'snow',
+  medieval: 'castle', kingdom: 'castle', dungeon: 'castle', knight: 'castle', dragon: 'castle', fantasy: 'castle',
 };
 
 export const EFFECTS = [

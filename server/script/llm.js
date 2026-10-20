@@ -60,7 +60,7 @@ export function createLlm(config) {
       `Every scene MUST explicitly list all visible characters from the top-level cast that are relevant in that scene. Zombie entities must have id/name/role identifying them as zombies, isZombie:true, zombie-green color, and actions zombie_walk/zombie_chase/infect/turn_zombie. Humans must use human actions and normal colors; infected victims may switch to isZombie:true only after the bite scene. Do not use zombie IDs for humans.`,
       `Write exactly ${n} scenes. Scene 1 is a strong cinematic hook. Last scene is a satisfying ending. Each scene changes something; use 2-5 short sentences of plot progression.`,
       `Allowed actions: ${ACTIONS.join(', ')}.`,
-      `Allowed backgrounds: ${BACKGROUNDS.join(', ')}.`,
+      `Allowed backgrounds: ${BACKGROUNDS.join(', ')}. Pick backgrounds that match where THIS story actually takes place (pirates -> beach, aliens/astronauts -> space, knights/dragons -> castle, winter/ice -> snow, etc.). Do not reuse bedroom/street/city by default; change location between scenes only when the story moves.`,
       `Allowed effects: ${EFFECTS.join(', ')}.`,
       `Allowed emotions: ${EMOTIONS.join(', ')}.`,
       `Allowed tones: ${TONES.join(', ')}. Allowed hats: ${HATS.join(', ')}. Allowed tops: ${TOPS.join(', ')}. Allowed accessories: ${ACCESSORIES.join(', ')}.`,
