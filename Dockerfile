@@ -14,7 +14,8 @@ ENV NODE_ENV=production \
 
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+# NODE_ENV=production would make npm skip devDependencies (vite), so include them explicitly.
+RUN npm ci --include=dev
 
 COPY . .
 RUN npm run build \
