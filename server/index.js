@@ -11,9 +11,10 @@ import { normalizeProject, validateGenerateRequest, ValidationError } from '../s
 import { loadConfig } from './config.js';
 import { createJobs } from './jobs.js';
 import { renderMp4, frameSize } from './exporter.js';
-import { createLlm, improvePromptLocally } from './script/llm.js';
+import { createLlm } from './script/llm.js';
 import { createScriptService } from './script/index.js';
 import { createTts } from './tts.js';
+import { withVoiceCache } from './voice-cache.js';
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.woff2': 'font/woff2' };
 const MAX_BODY = 1024 * 1024;
@@ -53,13 +54,15 @@ export async function createApp(overrides = {}) {
   const ffmpegOk = await checkFfmpeg(config.ffmpegBin);
   let tts;
   try {
-    tts = await createTts(config);
+    tts = withVoiceCache(await createTts(config));
   } catch (err) {
     console.error('[tts config]', err.message);
     tts = { name: 'unavailable', enabled: false, synth: async () => null, error: err.message };
   }
   const llm = createLlm(config);
   const generateScript = createScriptService({ llm });
+  const deployment = { revision: String(process.env.RAILWAY_GIT_COMMIT_SHA || process.env.SOURCE_VERSION || 'local').slice(0, 12), generationMode: 'ai-only', startedAt: new Date().toISOString() };
+  const voiceStatus = () => typeof tts.status === 'function' ? tts.status() : { provider: tts.name, enabled: tts.enabled, configured: false, authenticated: null, lastError: tts.error || null };
   const jobs = createJobs({ maxQueue: config.maxQueue, ttlMs: config.jobTtlMs });
   await mkdir(config.outputDir, { recursive: true });
 
@@ -71,7 +74,7 @@ export async function createApp(overrides = {}) {
       const m = process.memoryUsage();
       return send(res, 200, {
         ok: true, uptime: Math.round(process.uptime()), rssMB: Math.round(m.rss / 1048576),
-        ffmpeg: ffmpegOk, narration: tts.name, llm: llm.status(), exports: jobs.size(),
+        ffmpeg: ffmpegOk, narration: voiceStatus(), llm: llm.status(), exports: jobs.size(), deployment,
       });
     }
 
@@ -81,13 +84,19 @@ export async function createApp(overrides = {}) {
         actions: ACTIONS, effects: EFFECTS, emotions: EMOTIONS, subtitlePositions: SUBTITLE_POSITIONS,
         hats: HATS, tops: TOPS, accessories: ACCESSORIES,
         resolutions: RESOLUTIONS, defaultResolution: DEFAULT_RESOLUTION, fpsOptions: FPS_OPTIONS, defaultFps: DEFAULT_FPS,
-        ffmpeg: ffmpegOk, narration: { provider: tts.name, available: tts.enabled }, llm: { enabled: llm.enabled() },
-        limits: { minDuration: LIMITS.minDuration, maxDuration: LIMITS.maxDuration, maxCharacters: LIMITS.maxCharacters },
+        ffmpeg: ffmpegOk, narration: { ...voiceStatus(), provider: tts.name, available: tts.enabled }, llm: llm.status(), deployment,
+        limits: { minDuration: LIMITS.minDuration, maxDuration: LIMITS.maxDuration, maxCharacters: LIMITS.maxCharacters, maxTopicChars: LIMITS.maxTopicChars },
       });
     }
 
+    if (req.method === 'POST' && path === '/api/diagnostics') {
+      if (typeof llm.checkConnection === 'function') await llm.checkConnection().catch(() => {});
+      if (typeof tts.checkConnection === 'function') await tts.checkConnection().catch(() => {});
+      return send(res, 200, { llm: llm.status(), narration: voiceStatus(), deployment });
+    }
+
     if (req.method === 'POST' && path === '/api/voice') {
-      if (!tts.enabled) throw new HttpError(503, tts.error || 'Voice narration is unavailable. Configure espeak-ng or another TTS provider.');
+      if (!tts.enabled) throw new HttpError(503, tts.error || 'Natural narration is not configured. Set ELEVENLABS_API or ELEVENLABS_API_KEY on this Railway service, or turn narration off.');
       const body = await readJson(req);
       const text = typeof body.text === 'string' ? body.text.trim().slice(0, LIMITS.maxNarrationChars) : '';
       const language = typeof body.language === 'string' ? body.language.slice(0, 40) : 'English';
@@ -102,7 +111,8 @@ export async function createApp(overrides = {}) {
         return send(res, 200, audio, { 'content-type': type, 'content-length': audio.length, 'cache-control': 'no-store' });
       } catch (err) {
         if (err instanceof HttpError) throw err;
-        throw new HttpError(503, `Voice narration failed: ${err.message || 'provider unavailable'}`);
+        if (err.code && Number.isInteger(err.status)) throw err;
+        throw new HttpError(503, 'Voice narration failed. Check the connection status and try again.');
       } finally {
         await rm(workDir, { recursive: true, force: true });
       }
@@ -118,16 +128,13 @@ export async function createApp(overrides = {}) {
       const body = await readJson(req);
       const topic = typeof body.topic === 'string' ? body.topic.trim().slice(0, LIMITS.maxTopicChars) : '';
       if (topic.length < 3) throw new HttpError(400, 'Enter a topic before improving the prompt.');
-      if (!config.llamaUrl || !config.llmEnabled) {
-        return send(res, 200, { prompt: improvePromptLocally(topic), source: 'local' });
-      }
-      try {
-        const improved = await llm.improvePrompt(topic, { duration: body.duration });
-        return send(res, 200, { prompt: improved, source: 'llm' });
-      } catch (err) {
-        console.warn(`Language model prompt improvement failed, keeping prompt as written: ${err.message}`);
-        return send(res, 200, { prompt: improvePromptLocally(topic), source: 'local' });
-      }
+      const improved = await llm.improvePrompt(topic, { duration: body.duration });
+      return send(res, 200, { prompt: improved, source: 'llm' });
+    }
+
+    if (req.method === 'POST' && path === '/api/prompt/enhance') {
+      const input = validateGenerateRequest(await readJson(req));
+      return send(res, 200, await llm.enhancePrompt(input));
     }
 
     if (req.method === 'POST' && path === '/api/exports') {
@@ -188,7 +195,8 @@ export async function createApp(overrides = {}) {
       if (err instanceof ValidationError) return send(res, 400, { error: err.message, field: err.field });
       const status = err.status || 500;
       if (status >= 500) console.error('[server]', err);
-      send(res, status, { error: status >= 500 && !(err instanceof HttpError) ? 'Something went wrong. Please try again.' : err.message });
+      const safe = err instanceof HttpError || (typeof err.code === 'string' && Number.isInteger(err.status));
+      send(res, status, { error: safe ? err.message : 'Something went wrong. Please try again.', ...(safe && err.code ? { code: err.code, retryable: Boolean(err.retryable), retryAfterMs: err.retryAfterMs || 0 } : {}) });
     }
   });
   return { server, config, jobs };

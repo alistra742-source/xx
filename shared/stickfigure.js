@@ -563,6 +563,15 @@ export function solvePose(action, t, emotion = 'neutral', sceneDuration = 0) {
   const storyEnd = { jump: 1.25, dodge: 0.95, fight: 1.4, fall: 1.2, defeated: 1, wake_up: 2.1, infect: 2.2, turn_zombie: 3 }[action];
   const actionTime = storyEnd && sceneDuration > storyEnd ? time * storyEnd / sceneDuration : time;
   let p = fn(actionTime);
+  // Gestures have an intention: gather, express, release. Their internal motion
+  // can remain organic without waving/pointing at full force for an entire shot.
+  // No duration means the legacy instantaneous animation API stays unchanged.
+  if (sceneDuration > 0 && ['wave', 'point', 'celebrate', 'think'].includes(action)) {
+    const progress = clamp01(time / sceneDuration);
+    const engage = smooth(progress / 0.16);
+    const release = 1 - smooth((progress - 0.78) / 0.22);
+    p = mix(ACTION_FNS.stand(time), p, engage * release);
+  }
   const noStandBlend = action === 'sleep' || action === 'wake_up' || action === 'crawl';
   const blend = noStandBlend ? 1 : clamp01(time / 0.22);
   if (blend < 1) p = mix(ACTION_FNS.stand(0), p, smooth(blend));

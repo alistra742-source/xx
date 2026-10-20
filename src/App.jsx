@@ -32,9 +32,12 @@ export default function App() {
   const [source, setSource] = useState(null);
   const [busy, setBusy] = useState(null); // string while generating
   const [improvingPrompt, setImprovingPrompt] = useState(false);
+  const [checkingConnections, setCheckingConnections] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [activeScene, setActiveScene] = useState(0);
+  const [seekScene, setSeekScene] = useState(null);
+  const [enhancedPrompt, setEnhancedPrompt] = useState('');
   const [subs, setSubs] = useState(DEFAULT_SUBS);
   const [exportOpts, setExportOpts] = useState({ resolution: 720, fps: 24 });
   const [job, setJob] = useState(null);
@@ -59,6 +62,7 @@ export default function App() {
   async function generate(e) {
     e?.preventDefault();
     setError(''); setNotice(''); setJob(null);
+    setEnhancedPrompt('');
     setBusy('Dreaming up characters, plot twists and scenes…');
     try {
       const request = { ...form, seed: Math.floor(Math.random() * 1e9) };
@@ -68,7 +72,6 @@ export default function App() {
       const chosenTone = res.project.tone || 'story';
       setNotice(`${chosenTone.toUpperCase()} STORY · ${res.project.characters.length} characters styled for the scene`);
       setActiveScene(0);
-      if (res.warning) setNotice(`${chosenTone.toUpperCase()} STORY · ${res.project.characters.length} characters · local model unavailable, used story generator`);
       setSubs({ ...DEFAULT_SUBS, enabled: res.project.subtitles?.enabled !== false });
     } catch (err) {
       setError(err.message);
@@ -112,31 +115,36 @@ export default function App() {
     generate();
   }
 
-  const quickHooks = [
-    'At 3 AM, an unknown virus hit the city. A sleepy guy woke to emergency sirens, turned on the TV, and saw green zombies chasing people below his window.',
-    'A broke delivery guy accepts one final late-night order, but the address is an abandoned mansion that is not empty.',
-    'A quiet student discovers their school has been replaced by clones overnight—and one clone knows their name.',
-    'Two friends rob a museum for fun, then the paintings start moving and hunt them through the exhibits.',
-    'A lonely astronaut wakes up on Mars with one message from Earth: do not come home.',
-  ];
-
-  function chooseHook(text) { setField('topic', text); }
-
   async function improvePrompt() {
     setError('');
     setNotice('');
     setImprovingPrompt(true);
     try {
-      const result = await api('/api/improve-prompt', { method: 'POST', body: { topic: form.topic, duration: form.duration } });
-      setField('topic', result.prompt);
-      setNotice(result.source === 'llm'
-        ? 'Prompt improved by AI. Review it, then make your story.'
-        : 'AI is not active on this server (set GROQ_API and redeploy), so your prompt was kept as written.');
+      const result = await api('/api/prompt/enhance', { method: 'POST', body: { ...form, seed: Math.floor(Math.random() * 1e9) } });
+      setProject(result.project);
+      setEnhancedPrompt(result.enhancedPrompt || '');
+      setSource('llm');
+      setActiveScene(0);
+      setSubs({ ...DEFAULT_SUBS, enabled: result.project.subtitles?.enabled !== false });
+      setNotice('Your idea has a scene-by-scene production plan below. Your original prompt is unchanged; review the action, camera, and narration for each scene.');
     } catch (err) {
       setError(err.message);
     } finally {
       setImprovingPrompt(false);
     }
+  }
+
+  async function checkConnections() {
+    setCheckingConnections(true);
+    setError('');
+    try {
+      const status = await api('/api/diagnostics', { method: 'POST', body: {} });
+      setConfig((c) => ({ ...c, ...status, narration: { ...status.narration, available: status.narration.enabled } }));
+      const issues = [status.llm.lastError, status.narration.lastError].filter(Boolean).map((err) => typeof err === 'string' ? err : err.message);
+      if (issues.length) setError(issues.join(' '));
+      else setNotice('Connection check finished. Configured does not mean authenticated; the badges show the latest provider result.');
+    } catch (err) { setError(err.message); }
+    finally { setCheckingConnections(false); }
   }
 
   function startPolling(id) {
@@ -156,7 +164,7 @@ export default function App() {
   async function exportMp4() {
     setError(''); setNotice(''); setWebm({ running: false, progress: 0, url: null });
     try {
-      const res = await api('/api/exports', { method: 'POST', body: { project, ...exportOpts } });
+      const res = await api('/api/exports', { method: 'POST', body: { project: { ...project, subtitles: subs }, ...exportOpts } });
       setJob(res.job);
       startPolling(res.job.id);
     } catch (err) {
@@ -176,7 +184,7 @@ export default function App() {
     setError(''); setNotice('');
     setWebm({ running: true, progress: 0, url: null });
     try {
-      const blob = await recordWebm(project, { fps: exportOpts.fps, subs, narration: project.narration, onProgress: (p) => setWebm((w) => ({ ...w, progress: p })) });
+      const blob = await recordWebm(project, { fps: exportOpts.fps, subs, narration: project.narration, onProjectTiming: setProject, onProgress: (p) => setWebm((w) => ({ ...w, progress: p })) });
       setWebm({ running: false, progress: 1, url: URL.createObjectURL(blob) });
     } catch (err) {
       setWebm({ running: false, progress: 0, url: null });
@@ -196,11 +204,13 @@ export default function App() {
         </div>
         {config && (
           <div className="badges">
-            <span className={`badge ${config.llm.enabled ? 'ok' : ''}`}>{config.llm.enabled ? 'Local LLM on' : 'Template scripts'}</span>
+            <span className={`badge ${config.llm.authenticated === true ? 'ok' : 'warn'}`}>{config.llm.authenticated === true ? 'Story AI connected' : config.llm.lastError ? 'Story AI · check connection' : config.llm.enabled ? 'Story AI configured · unverified' : 'Story AI not configured'}</span>
             <span className={`badge ${serverCanMp4 ? 'ok' : 'warn'}`}>{serverCanMp4 ? 'MP4 export' : 'WebM export only'}</span>
             <span className={`badge ${config.narration.available ? 'ok' : ''}`}>
-              {config.narration.available ? `Voice: ${config.narration.provider}` : 'Voice provider unavailable'}
+              {config.narration.available ? `Voice: ${config.narration.provider}${config.narration.authenticated === true ? ' · connected' : config.narration.lastError ? ' · check connection' : ' · unverified'}` : 'Natural voice not configured'}
             </span>
+            <button className="btn small" type="button" onClick={checkConnections} disabled={checkingConnections}>{checkingConnections ? 'Checking…' : 'Check connections'}</button>
+            {config.deployment?.revision && <span className="muted small">Build {config.deployment.revision}</span>}
           </div>
         )}
       </header>
@@ -210,23 +220,22 @@ export default function App() {
           <h2>1. Idea</h2>
           <form onSubmit={generate} className="form">
             <label>Topic or story
-              <textarea rows={4} value={form.topic} maxLength={500} required minLength={3}
-                placeholder="Create a funny 45-second animation about a stick figure trying to survive a zombie apocalypse."
+              <textarea rows={5} value={form.topic} maxLength={config?.limits?.maxTopicChars || 600} required minLength={3}
+                placeholder="Describe your own story: who it follows, what happens, and the visual style you want."
                 onChange={(e) => setField('topic', e.target.value)} />
             </label>
             <div className="prompt-actions">
               <button className="btn small" type="button" onClick={improvePrompt} disabled={improvingPrompt || !!busy || form.topic.trim().length < 3}>
-                {improvingPrompt ? 'Expanding your idea…' : '✦ Improve prompt with AI'}
+                {improvingPrompt ? 'Planning your scenes…' : '✦ Enhance prompt & plan every scene'}
               </button>
-              <span className="muted small">Keeps your premise; adds story detail.</span>
+              <span className="muted small">Reads your idea; creates original actions, camera directions and narration. No preset plot.</span>
             </div>
+            {enhancedPrompt && <label>Enhanced production brief (your original idea is kept above)
+              <textarea rows={5} value={enhancedPrompt} readOnly />
+            </label>}
             <label>Title (optional)
               <input value={form.title} maxLength={80} onChange={(e) => setField('title', e.target.value)} />
             </label>
-            <div className="hook-block">
-              <span className="muted small">Quick story sparks</span>
-              <div className="hook-chips">{quickHooks.map((hook, i) => <button type="button" className="hook-chip" key={i} onClick={() => chooseHook(hook)}>{['🧟 Outbreak', '👻 Haunted', '🎓 School twist', '💎 Heist', '🚀 Sci-fi'][i]}</button>)}</div>
-            </div>
             <div className="row">
               <label>Duration
                 <select value={form.duration} onChange={(e) => setField('duration', Number(e.target.value))}>
@@ -251,7 +260,7 @@ export default function App() {
               <label className="check"><input type="checkbox" checked={form.narration} onChange={(e) => setField('narration', e.target.checked)} /> Narration</label>
               <label className="check"><input type="checkbox" checked={form.subtitles} onChange={(e) => setField('subtitles', e.target.checked)} /> Subtitles</label>
             </div>
-            <button className="btn primary generate-btn" type="submit" disabled={!!busy || !config}>
+            <button className="btn primary generate-btn" type="submit" disabled={!!busy || improvingPrompt || !config}>
               {busy ? 'Building your story…' : '✦ Make my story'}
             </button>
             {busy && <div className="progress indeterminate" role="status">{busy}</div>}
@@ -268,7 +277,7 @@ export default function App() {
                 onChange={(e) => setProject((p) => ({ ...p, title: e.target.value }))} />
               <p className="muted small">{project.tone} story · {project.characters.length} characters · {project.scenes.length} scenes · {total.toFixed(1)} s
                 {durationWarning && <span className="warn-text"> (target {project.duration} s)</span>}</p>
-              <Player project={project} subs={subs} activeScene={activeScene} onScene={setActiveScene} />
+              <Player project={project} subs={subs} activeScene={activeScene} seekScene={seekScene} onScene={setActiveScene} onProjectTiming={setProject} />
               <button className="btn reroll-btn" onClick={rerollStory} disabled={!!busy}>↻ Make a different version</button>
             </section>
 
@@ -323,7 +332,7 @@ export default function App() {
               {job && (
                 <div className={`progress ${job.status === 'error' ? 'failed' : ''}`} role="status">
                   <div className="bar" style={{ width: `${Math.round((job.progress || 0) * 100)}%` }} />
-                  <span>{job.status === 'done' ? 'MP4 ready.' : job.status === 'queued' ? 'Queued…' : job.message}</span>
+                  <span>{job.status === 'done' ? `MP4 ready.${job.result?.timingAdjusted ? ' Scene timing was extended to preserve the full narration.' : ''}` : job.status === 'queued' ? 'Queued…' : job.message}</span>
                 </div>
               )}
               {job?.status === 'error' && <div className="alert error">{job.error}</div>}
@@ -347,17 +356,23 @@ export default function App() {
             </section>
 
             <section className="panel scenes-panel">
-              <h2>4. Scenes</h2>
+              <h2>4. Scene-by-scene direction</h2>
               <ol className="scene-list">
                 {project.scenes.map((sc, i) => (
                   <li key={sc.id} className={`scene-card${activeScene === i ? ' active' : ''}`} onClick={() => setActiveScene(i)}>
                     <div className="scene-head">
                       <strong>Scene {i + 1}</strong>
+                      <button className="btn small" type="button" onClick={(e) => { e.stopPropagation(); setActiveScene(i); setSeekScene({ index: i, nonce: Date.now() }); }}>Preview scene</button>
                       <label className="inline">Seconds
                         <input type="number" min={2} max={20} step={0.5} value={sc.duration}
                           onChange={(e) => updateScene(i, { duration: Math.max(2, Math.min(20, Number(e.target.value) || 2)) })} />
                       </label>
                     </div>
+                    {sc.purpose && <p className="muted small"><strong>Story beat:</strong> {sc.purpose}</p>}
+                    {(sc.action || sc.direction) && <p className="muted small"><strong>Action:</strong> {sc.action || sc.direction}</p>}
+                    {sc.camera && <p className="muted small"><strong>Camera:</strong> {typeof sc.camera === 'string' ? sc.camera : JSON.stringify(sc.camera)}</p>}
+                    {sc.shotDescription && <p className="muted small"><strong>Composition:</strong> {sc.shotDescription}</p>}
+                    {sc.continuity && <p className="muted small"><strong>Continuity:</strong> {sc.continuity}</p>}
                     <label>Narration
                       <textarea rows={2} value={sc.narration} disabled={!project.narration && !sc.narration} placeholder="(no narration)"
                         onChange={(e) => updateScene(i, { narration: e.target.value.slice(0, 280) })} />

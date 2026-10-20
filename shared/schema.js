@@ -247,16 +247,24 @@ function normalizeScene(raw, index, characters, warnings) {
     characters: chars,
     effects,
     textOverlay: str(scene.textOverlay, 48, ''),
+    purpose: str(scene.purpose ?? scene.direction?.purpose, 1200),
+    action: str(scene.action ?? scene.direction?.action, 2400),
+    camera: ['wide', 'medium', 'close'].includes(scene.camera ?? scene.direction?.camera) ? (scene.camera ?? scene.direction.camera) : 'wide',
+    cameraMotion: ['static', 'push_in', 'pan_left', 'pan_right'].includes(scene.cameraMotion ?? scene.direction?.cameraMotion) ? (scene.cameraMotion ?? scene.direction.cameraMotion) : 'static',
+    shotDescription: str(scene.shotDescription ?? scene.direction?.shotDescription, 1200),
+    continuity: str(scene.continuity ?? scene.direction?.continuity, 1600),
   };
 }
 
 /** Rescale scene durations so they sum to the target (keeping per-scene minimums). */
 export function fitDurations(scenes, target) {
-  const total = scenes.reduce((s, sc) => s + sc.duration, 0);
-  if (total <= 0 || Math.abs(total - target) < 0.5) return;
-  const k = target / total;
-  scenes.forEach((sc) => {
-    sc.duration = clamp(Math.round(sc.duration * k * 2) / 2, LIMITS.minSceneSeconds, LIMITS.maxSceneSeconds);
+  if (!scenes.length) return;
+  const total = scenes.reduce((s, sc) => s + Math.max(0.001, sc.duration), 0);
+  let elapsed = 0;
+  scenes.forEach((sc, i) => {
+    const end = i === scenes.length - 1 ? target : Math.round((elapsed + target * Math.max(0.001, sc.duration) / total) * 1000) / 1000;
+    sc.duration = Math.round((end - elapsed) * 1000) / 1000;
+    elapsed = end;
   });
 }
 
@@ -304,6 +312,12 @@ export function normalizeProject(raw, defaults = {}) {
   if (rawScenes.length === 0) throw new ValidationError('The script has no scenes.', 'scenes');
   const scenes = rawScenes.slice(0, LIMITS.maxScenes).map((s, i) => normalizeScene(s, i, characters, warnings));
   if (rawScenes.length > LIMITS.maxScenes) warnings.push(`Trimmed to ${LIMITS.maxScenes} scenes.`);
+  const seenScenes = new Set();
+  scenes.forEach(({ id, duration: sceneDuration, ...content }, index) => {
+    const fingerprint = JSON.stringify(content);
+    if (seenScenes.has(fingerprint)) warnings.push(`Scene ${index + 1} repeats an earlier scene; preserved as authored.`);
+    seenScenes.add(fingerprint);
+  });
 
   fitDurations(scenes, duration);
 
@@ -319,6 +333,7 @@ export function normalizeProject(raw, defaults = {}) {
     subtitles: normalizeSubtitles(src.subtitles ?? { enabled: defaults.subtitles }),
     characters,
     scenes,
+    warnings,
   };
 }
 
@@ -359,5 +374,5 @@ export function validateGenerateRequest(body) {
 
 /** Target number of scenes for a duration (30s -> ~6, 60s -> ~10). */
 export function sceneCountFor(duration) {
-  return clamp(Math.round(duration / 5.2), 5, LIMITS.maxScenes);
+  return clamp(Math.round(duration / 5.2), 3, LIMITS.maxScenes);
 }

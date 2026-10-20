@@ -52,3 +52,27 @@ test('renders a playable MP4 with the expected duration and size', { skip: hasFf
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test('long narration extends video naturally, preserves full audio, and returns adjusted project', { skip: !hasFfmpeg }, async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'exp-long-'));
+  try {
+    const voice = join(dir, 'voice.wav');
+    assert.equal(spawnSync(FFMPEG, ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'lavfi', '-i', 'sine=frequency=220:duration=3', voice]).status, 0);
+    const project = { aspectRatio: '16:9', narration: true, duration: 1, subtitles: { enabled: true }, scenes: [{ duration: 1, background: 'street', characters: [], narration: 'All words must be preserved.' }] };
+    const result = await renderMp4({ project, options: { resolution: 120, fps: 12 }, outPath: join(dir, 'out.mp4'), workDir: join(dir, 'work'), tts: { enabled: true, synth: async () => voice }, ffmpegBin: FFMPEG });
+    assert.ok(result.seconds >= 3 / 1.2);
+    assert.ok(result.seconds < 3);
+    assert.equal(result.project.duration, result.seconds);
+    assert.equal(result.frames / 12, result.seconds);
+    assert.equal(result.timingAdjusted, true);
+    assert.equal(project.scenes[0].duration, 1);
+    const probe = spawnSync(FFMPEG, ['-hide_banner', '-i', result.path], { encoding: 'utf8' }).stderr;
+    assert.match(probe, /Audio: aac/);
+    const match = /Duration: (\d+):(\d+):([\d.]+)/.exec(probe);
+    assert.ok(Math.abs(Number(match[3]) - result.seconds) < 0.15);
+    // Pitch must remain close to 220 Hz, not the ~264 Hz chipmunk result of resampling.
+    const pcm = spawnSync(FFMPEG, ['-hide_banner', '-loglevel', 'error', '-i', result.path, '-vn', '-f', 's16le', '-ac', '1', '-ar', '44100', 'pipe:1'], { maxBuffer: 4e6 }).stdout;
+    let crosses = 0; for (let i = 2; i < Math.min(pcm.length, 88200); i += 2) if (pcm.readInt16LE(i - 2) < 0 && pcm.readInt16LE(i) >= 0) crosses++;
+    assert.ok(crosses > 205 && crosses < 235, `pitch ${crosses} Hz`);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});

@@ -17,6 +17,56 @@ export function layoutFor(W, H, characterCount = 1) {
   return { W, H, scale, groundFraction: BACKGROUND_INFO.white.ground };
 }
 
+/** Deterministic ensemble blocking. Preserve authored spacing unless silhouettes
+ * collide; crowded casts use staggered depth rows instead of eight tiny figures. */
+export function stageCast(characters, W, H, ground = 0.8) {
+  const n = characters.length;
+  const columns = n > 4 ? (W / H < 0.8 ? 2 : W / H > 1.4 ? 4 : 3) : n;
+  const rows = Math.ceil(n / Math.max(1, columns));
+  const ordered = characters.map((c, i) => ({ c, i })).sort((a, b) => a.c.position.x - b.c.position.x || a.i - b.i);
+  const base = layoutFor(W, H, Math.min(n, columns)).scale;
+  const collides = ordered.some((a, i) => i && Math.abs(a.c.position.x - ordered[i - 1].c.position.x) * W < base * 0.39 && Math.abs((a.c.position.y ?? ground) - (ordered[i - 1].c.position.y ?? ground)) * H < base * 0.55);
+  const staged = new Array(n);
+  ordered.forEach(({ c, i }, rank) => {
+    const row = Math.floor(rank / Math.max(1, columns));
+    const count = Math.min(columns, n - row * columns);
+    const depth = rows > 1 ? row / (rows - 1) : 1;
+    const scale = Math.min(base, H * (rows > 1 ? 0.46 : 0.66), W / Math.max(1, count) * 1.26) * (rows > 1 ? 0.79 + depth * 0.21 : 1);
+    staged[i] = {
+      x: collides || rows > 1 ? W * (0.12 + (rank % columns + 0.5) / count * 0.76) : c.position.x * W,
+      groundY: (collides || rows > 1 ? ground - (1 - depth) * Math.min(0.42, rows > 1 ? 0.26 + (rows - 2) * 0.10 : 0) : c.position.y ?? ground) * H,
+      scale,
+      automatic: collides || rows > 1,
+    };
+  });
+  return staged;
+}
+
+/** Safe, continuous camera; unknown descriptive strings deliberately do nothing.
+ * Bounds include all actors and relevant furniture, never just the lead face. */
+export function cameraFor(scene, progress, W, H, bounds) {
+  const shot = scene.camera ?? scene.direction?.camera;
+  const motion = scene.cameraMotion ?? scene.direction?.cameraMotion;
+  const explicit = ['wide', 'medium', 'close'].includes(shot) || ['static', 'push_in', 'pan_left', 'pan_right'].includes(motion);
+  const p = Math.max(0, Math.min(1, progress));
+  const ease = p * p * (3 - 2 * p);
+  const request = (shot === 'wide' ? 0.90 : shot === 'close' ? 1.32 : 1) * (motion === 'push_in' ? 1 + ease * 0.14 : 1);
+  const b = bounds || { left: W * 0.2, right: W * 0.8, top: H * 0.15, bottom: H * 0.85 };
+  const fit = Math.min(W * 0.92 / Math.max(1, b.right - b.left), H * 0.86 / Math.max(1, b.bottom - b.top));
+  const legacy = scene.effects?.includes('zoom') ? 1 + 0.07 * p : 1 + Math.sin(p * Math.PI) * 0.012;
+  const zoom = Math.min(explicit ? request : legacy, Math.max(0.02, fit));
+  const centerX = explicit ? (b.left + b.right) / 2 : W / 2;
+  const centerY = explicit ? (b.top + b.bottom) / 2 : H / 2;
+  const pan = motion === 'pan_left' ? 1 : motion === 'pan_right' ? -1 : 0;
+  const desiredX = W / 2 - centerX * zoom + pan * (ease - 0.5) * W * 0.10;
+  const desiredY = H * 0.48 - centerY * zoom;
+  const clamp = (value, lo, hi) => Math.max(lo, Math.min(hi, value));
+  return { zoom,
+    x: clamp(desiredX, W * 0.04 - b.left * zoom, W * 0.96 - b.right * zoom),
+    y: clamp(explicit ? desiredY : H / 2 * (1 - zoom), H * 0.06 - b.top * zoom, H * 0.92 - b.bottom * zoom),
+  };
+}
+
 /** Furniture-aware blocking, shared with tests and independent of canvas. */
 export function bedroomStaging(action, progress, W, H, requestedScale) {
   const { bed, ground, window, tv } = bedroomLayout(W, H);
@@ -890,8 +940,6 @@ export function renderFrame(ctx, scene, t, opts) {
   const L = layoutFor(W, H, scene.characters.length);
   const effects = scene.effects || [];
   const shaken = effects.includes('shake') || effects.includes('alarm_flash');
-  const breathingZoom = 1 + Math.sin(progress * Math.PI) * 0.012;
-  const zoom = effects.includes('zoom') ? 1 + 0.07 * progress : breathingZoom;
 
   // Lookup map for character outfits/colors from project.characters
   const charMetaMap = new Map();
@@ -902,43 +950,28 @@ export function renderFrame(ctx, scene, t, opts) {
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, W, H);
-  drawBackground(ctx, scene.background, W, H, local);
+  // Overscan is a quiet matte, not a second untransformed set of furniture.
+  ctx.fillStyle = dark ? '#101a28' : '#e7e5dc';
+  ctx.fillRect(0, 0, W, H);
 
-  // Camera: zoom around the centre plus shake.
+  // Compose actors first, then fit a single world-space camera to the cast.
   const shakeAmp = effects.includes('shake') ? 0.0065 : 0.0025;
   const shakeX = shaken ? Math.sin(local * 45) * shakeAmp * W : 0;
   const shakeY = shaken ? Math.cos(local * 38) * shakeAmp * H : 0;
-  ctx.translate(W / 2 + shakeX, H / 2 + shakeY);
-  ctx.scale(zoom, zoom);
-  ctx.translate(-W / 2, -H / 2);
-  // Props and actors must share the camera or sleepers drift off pillows.
-  // The first pass remains as overscan underpainting at shaken frame edges.
-  if (zoom !== 1 || shaken) drawBackground(ctx, scene.background, W, H, local);
-
-  if (effects.includes('night')) drawTint(ctx, W, H, 'rgba(8,15,45,0.32)');
-  if (effects.includes('day')) drawTint(ctx, W, H, 'rgba(255,230,160,0.08)');
-  if (effects.includes('alarm_flash')) {
-    const redPulse = 0.14 + 0.14 * Math.sin(local * 9);
-    drawTint(ctx, W, H, `rgba(220,38,38,${redPulse})`);
-  }
-  if (effects.includes('tv_glow')) {
-    const bluePulse = 0.1 + 0.06 * Math.sin(local * 18);
-    drawTint(ctx, W, H, `rgba(56,189,248,${bluePulse})`);
-  }
-
   const sketches = [];
-  const characterCount = scene.characters.length;
+  const actors = [];
+  const blocking = stageCast(scene.characters, W, H, bgInfo.ground);
   const mainAction = scene.characters[0]?.action;
-  drawEffectsBefore(ctx, effects, L, local, defaultInk, mainAction);
 
   scene.characters.forEach((c, i) => {
     const meta = charMetaMap.get(c.id) || {};
     const pose = solvePose(c.action, local, c.emotion, dur);
     const hasTarget = typeof c.targetX === 'number' && Number.isFinite(c.targetX);
-    const curX = hasTarget ? c.position.x + (c.targetX - c.position.x) * progress : c.position.x;
-    let px = curX * W;
-    let groundY = (c.position.y ?? bgInfo.ground) * H;
-    let charScale = L.scale * (c.scale || 1) * (characterCount > 3 ? 0.92 : 1);
+    const block = blocking[i];
+    const travelProgress = progress * progress * (3 - 2 * progress);
+    let px = hasTarget ? block.x + (c.targetX * W - block.x) * travelProgress : block.x;
+    let groundY = block.groundY;
+    let charScale = block.scale * (c.scale || 1);
     let facing = c.facing === -1 ? -1 : 1;
     const stage = scene.background === 'bedroom' ? bedroomStaging(c.action, progress, W, H, charScale) : null;
     if (stage) {
@@ -949,7 +982,7 @@ export function renderFrame(ctx, scene, t, opts) {
     // Ease travel toward safe frame limits, rather than hitting an invisible wall.
     if (!hasTarget && pose.dist) {
       const room = Math.max(charScale * 0.08, facing > 0 ? W * 0.85 - px : px - W * 0.15);
-      const limit = room / charScale;
+      const limit = Math.min(room / charScale, block.automatic ? 0.12 : Infinity);
       pose.dist = limit * Math.tanh(pose.dist / limit);
     }
 
@@ -984,7 +1017,7 @@ export function renderFrame(ctx, scene, t, opts) {
     sk.symbol = effects.includes('float_text') && i === 0 ? floatSymbol(c.action, c.emotion) : '';
     sketches.push(sk);
 
-    drawFigure(ctx, sk, {
+    actors.push({ sk, groundY, options: {
       ink: charInk,
       lineWidth: Math.max(1.6, charScale * 0.022),
       face: {
@@ -1000,8 +1033,39 @@ export function renderFrame(ctx, scene, t, opts) {
       drip: c.drip || meta.drip,
       isZombie,
       t: local,
-    });
+    } });
   });
+
+  const bounds = sketches.length ? {
+    left: Math.min(...sketches.map(s => Math.min(s.lHand[0], s.rHand[0], s.lFoot[0], s.rFoot[0], s.head[0] - s.headR * 1.9))),
+    right: Math.max(...sketches.map(s => Math.max(s.lHand[0], s.rHand[0], s.lFoot[0], s.rFoot[0], s.head[0] + s.headR * 1.9))),
+    top: Math.min(...sketches.map(s => Math.min(s.lHand[1], s.rHand[1], s.head[1] - s.headR * 2.2))),
+    bottom: Math.max(...sketches.map(s => Math.max(s.lFoot[1], s.rFoot[1]) + s.headR * 0.2)),
+  } : undefined;
+  if (bounds && scene.background === 'bedroom') {
+    const { bed, window, tv } = bedroomLayout(W, H);
+    // These props carry the action. A close shot may not crop the pillow/window/TV.
+    for (const c of scene.characters) {
+      const prop = ['sleep', 'wake_up'].includes(c.action) ? { x: bed.x, y: bed.mattressY - H * 0.12, w: bed.w, h: H * 0.25 } : c.action === 'look_window' ? window : c.action === 'watch_tv' ? tv : null;
+      if (prop) {
+        bounds.left = Math.min(bounds.left, prop.x); bounds.right = Math.max(bounds.right, prop.x + prop.w);
+        bounds.top = Math.min(bounds.top, prop.y); bounds.bottom = Math.max(bounds.bottom, prop.y + prop.h);
+      }
+    }
+  }
+  const camera = cameraFor(scene, progress, W, H, bounds);
+  ctx.translate(camera.x + shakeX, camera.y + shakeY);
+  ctx.scale(camera.zoom, camera.zoom);
+  // Background and actors share the same transform, preserving prop alignment.
+  drawBackground(ctx, scene.background, W, H, local);
+  if (effects.includes('night')) drawTint(ctx, W, H, 'rgba(8,15,45,0.32)');
+  if (effects.includes('day')) drawTint(ctx, W, H, 'rgba(255,230,160,0.08)');
+  if (effects.includes('alarm_flash')) drawTint(ctx, W, H, `rgba(220,38,38,${0.14 + 0.14 * Math.sin(local * 9)})`);
+  if (effects.includes('tv_glow')) drawTint(ctx, W, H, `rgba(56,189,248,${0.1 + 0.06 * Math.sin(local * 18)})`);
+  drawEffectsBefore(ctx, effects, L, local, defaultInk, mainAction);
+  // Painter order follows floor depth, not cast array order.
+  actors.sort((a, b) => a.groundY - b.groundY);
+  for (const actor of actors) drawFigure(ctx, actor.sk, actor.options);
 
   drawEffectsAfter(ctx, effects, L, local, sketches);
 
@@ -1055,7 +1119,7 @@ export function renderFrame(ctx, scene, t, opts) {
 
   const sub = opts.subtitle;
   if (sub?.enabled && sub.text) {
-    const headBoxes = sketches.map((s) => s.headBox);
+    const headBoxes = sketches.map((s) => ({ x: s.headBox.x * camera.zoom + camera.x, y: s.headBox.y * camera.zoom + camera.y, w: s.headBox.w * camera.zoom, h: s.headBox.h * camera.zoom }));
     const y = subtitleY(H, sub.position, sub.size, headBoxes);
     drawSubtitle(ctx, sub.text, W, y, sub);
   }

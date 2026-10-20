@@ -1,20 +1,10 @@
-// Script service: tries the local LLM first (when configured) and always falls
-// back to the deterministic template generator. Never throws for model failures.
-import { normalizeProject } from '../../shared/schema.js';
-import { templateProject } from './template.js';
+// Production stories are always model authored. Never substitute an unrelated
+// canned plot when configuration, authentication or generation fails.
+import { ScriptError } from './llm.js';
 
-export function createScriptService({ llm, log = console }) {
+export function createScriptService({ llm }) {
   return async function generateScript(req) {
-    if (llm.enabled()) {
-      try {
-        return await llm.generateScript(req);
-      } catch (err) {
-        log.warn?.(`[script] ${err.message}. Using template generator.`);
-        const project = normalizeProject(templateProject(req), req);
-        return { project, source: 'template', warning: err.message };
-      }
-    }
-    const project = normalizeProject(templateProject(req), req);
-    return { project, source: 'template', warning: null };
+    if (!llm) throw new ScriptError('Configure a language model before creating a story.', 'LLM_NOT_CONFIGURED', 503, false);
+    return llm.generateScript(req);
   };
 }

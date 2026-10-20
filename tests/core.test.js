@@ -84,7 +84,7 @@ describe('subtitles', () => {
   });
 });
 
-describe('template generator (offline fallback)', () => {
+describe('legacy template utility (not used by production generation)', () => {
   test('extracts story subject without narrating the user prompt', () => {
     const subject = extractSubject('Create a funny 45-second animation about a stick figure trying to survive a zombie apocalypse.');
     assert.ok(!/create|animation|stick figure|45-second/i.test(subject), subject);
@@ -134,10 +134,11 @@ describe('template generator (offline fallback)', () => {
 });
 
 describe('TTS configuration', () => {
-  test('automatic voice provider is advertised as available when espeak is absent, with graceful online fallback', async () => {
+  test('automatic voice requires neural credentials instead of silently falling back', async () => {
     const tts = await createTts({ ttsProvider: 'auto', espeakBin: 'definitely-not-an-espeak-binary', ttsTimeoutMs: 100 });
-    assert.equal(tts.enabled, true);
-    assert.equal(tts.name, 'google-tts');
+    assert.equal(tts.enabled, false);
+    assert.equal(tts.name, 'elevenlabs-neural-male');
+    assert.match(tts.error, /ELEVENLABS_API/);
     assert.equal((await createTts({ ttsProvider: 'none' })).enabled, false);
   });
 });
@@ -214,7 +215,7 @@ test('LLM script request sends the key, model, and a per-request variation id', 
   const story = {
     title: 'Test', tone: 'funny',
     characters: [{ id: 'hero', name: 'Hero', role: 'protagonist', color: '#ff0000', isZombie: false }],
-    scenes: [{ duration: 5, background: 'desert', narration: 'The hero finds a map.', effects: [], textOverlay: '', characters: [{ id: 'hero', action: 'walk', emotion: 'happy', isZombie: false, position: { x: 0.5, y: 0.8 }, targetX: 0.6 }] }],
+    scenes: ['Finds map.', 'Follows tracks.', 'Reaches oasis.'].map((narration, i) => ({ duration: 10 / 3, purpose: `Progress ${i}`, action: narration, background: 'desert', narration, effects: [], textOverlay: '', characters: [{ id: 'hero', action: 'walk', emotion: 'happy', isZombie: false, position: { x: 0.5, y: 0.8 }, targetX: 0.6 }] })),
   };
   globalThis.fetch = async (url, init) => {
     calls.push({ url, init });
@@ -247,7 +248,7 @@ test('GROQ_API alone selects Groq and the fastest small model', () => {
   assert.equal(explicit.llmApiKey, 'k');
 });
 
-test('prompt improvement without a model keeps the user prompt and adds no fixed text', () => {
+test('legacy whitespace utility adds no fixed text (not used by the improve endpoint)', () => {
   assert.equal(improvePromptLocally('  a robot   learns to dance '), 'a robot learns to dance');
   assert.equal(improvePromptLocally('Heist bank'), 'Heist bank');
 });

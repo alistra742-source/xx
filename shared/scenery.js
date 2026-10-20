@@ -511,6 +511,16 @@ function drawScenicFinish(ctx, name, W, H, ground, t) {
     }
   }
   if (['bedroom', 'school', 'office', 'bunker', 'lab'].includes(name)) {
+    // Soft diagonal practical-light shafts establish depth and a readable
+    // silhouette backdrop. They drift once with shot time, never snap/reseed.
+    const drift = Math.tanh(t / 12) * W * 0.025;
+    const cool = ['lab', 'bunker'].includes(name);
+    for (const x of [W * 0.18, W * 0.72]) {
+      const shaft = ctx.createLinearGradient(x, H * 0.10, x + drift, ground);
+      shaft.addColorStop(0, cool ? 'rgba(175,225,239,0.085)' : 'rgba(255,227,175,0.08)');
+      shaft.addColorStop(1, 'rgba(186,211,226,0)');
+      poly(ctx, shaft, [[x - W * 0.025, H * 0.10], [x + W * 0.025, H * 0.10], [x + W * 0.23 + drift, ground], [x - W * 0.04 + drift, ground]]);
+    }
     ctx.strokeStyle = 'rgba(120,146,163,0.12)'; ctx.lineWidth = Math.max(1, unit * 0.002);
     for (let i = -5; i <= 5; i++) {
       ctx.beginPath(); ctx.moveTo(W * 0.5 + i * W * 0.055, ground); ctx.lineTo(W * 0.5 + i * W * 0.2, H); ctx.stroke();

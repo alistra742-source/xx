@@ -1,112 +1,71 @@
 # AI Stick-Figure Video Maker
 
-Type a story idea and length. The story generator chooses the tone, cast, outfits and scene beats, animates articulated stick figures, and exports a downloadable **MP4 with real spoken narration**. It is designed for Railway's ~512 MB target and works without a paid API or model; the built-in generator is a local procedural fallback, not an LLM.
+Turn your own idea into an AI-written storyboard, illustrated animation, natural narration, and downloadable MP4 or WebM. Stories are generated from the submitted prompt—not selected from a preset plot library.
 
-## What works out of the box
+## Railway setup
 
-| Feature | Without any external service |
-| --- | --- |
-| Script + scene generation | Yes, via built-in prompt-aware procedural story generator (optional local LLM) |
-| Stick-figure animation (articulated walk/run/sleep/wake/zombie chase/infection, clothing, hats and props) | Yes |
-| Backgrounds (street, forest, city, horror, …) and effects (shake, zoom, day/night, …) | Yes |
-| Scene editor, preview, timeline, regenerate scene | Yes |
-| Subtitles (size, position, colour, outline) | Yes, from the script's narration text |
-| MP4 export (9:16, 16:9, 1:1; 480–1080p; 12/24/30 fps) | Yes, when `ffmpeg` is installed (the Docker image installs it) |
-| Narration audio | Yes by default: local `espeak-ng` (offline, bundled in Docker); free online TTS is the auto-mode fallback. With `TTS_PROVIDER=none`, no audio. |
-| Local LLM script writing (Qwen2.5-0.5B GGUF) | Only if a `llama-server` is running and `LLAMA_URL` is set |
-| WebM fallback | Yes, in the browser, when server MP4 export is unavailable |
+1. Deploy this repository using the included Dockerfile and `railway.json`.
+2. Add `GROQ_API` **or** `GROQ_API_KEY` to the variables of the **running web service**. A Groq key selects the correct endpoint automatically. For another compatible provider, use `LLM_BASE_URL`, `LLM_API_KEY`, and `LLM_MODEL`.
+3. Add `ELEVENLABS_API` **or** `ELEVENLABS_API_KEY` for neural male narration. The default voice is Adam; optionally change `ELEVENLABS_VOICE_ID`.
+4. Deploy/restart after changing variables. Open **Check connections** and check the displayed build revision to ensure you are seeing the new deployment.
 
-If the language model is missing, slow, or fails, the app falls back to the template generator. Generation never fails because the model is down.
+Keys stay server-side. A key being present is not proof it works: configuration and authentication status are reported separately. Story checks use the provider's models endpoint; narration is only marked authenticated after successful synthesis, avoiding a paid test request or a false rejection of speech-only keys.
 
-## Requirements
+Missing or rejected AI credentials produce an actionable error. **There is no automatic template-story fallback, eSpeak fallback, or Google voice fallback.** If a provider rejects a key or runs out of quota, the app does not quietly substitute a different story or narrator. Legacy template utilities remain for compatibility/tests but are not connected to production generation.
 
-- Node.js 20.10 or newer (22 recommended)
-- `ffmpeg` on `PATH` for MP4 export (`apt-get install ffmpeg`)
-- `espeak-ng` for offline narration (included in Docker); optional `llama-server` for model-generated stories
+## Studio workflow
 
-## Local setup
+- Enter your own premise, target duration, and aspect ratio.
+- **Enhance prompt & plan every scene** reads that idea and generates a production brief, original storyboard, scene action, camera direction, continuity, and narration. The original prompt is not overwritten; the plan itself becomes the editable project without a second generation request.
+- **Make my story** generates directly from the current idea. **Make a different version** requests a fresh variation.
+- Review scenes, preview individual shots, edit character appearance and narration, then export.
+- Preview and export reuse a bounded short-lived voice cache. Narration is not restarted every frame. Timing can extend to preserve spoken lines rather than clipping words or drastically accelerating speech.
+
+## Local development
+
+Requires Node.js 20.19+ (Node 22 recommended), and FFmpeg for MP4 export. Docker installs FFmpeg and the optional eSpeak binary.
 
 ```bash
 npm ci
-cp .env.example .env        # optional; values are read from the environment
-npm run build               # builds the React frontend into dist/
-npm start                   # http://localhost:3000
+# Export your provider credentials in your shell, or use Node's --env-file option.
+npm run build
+npm start
 ```
 
-Development with hot reload: `npm run dev` (API on :3000, Vite on :5173).
+The app does not automatically load `.env`. For local file-based variables, copy `.env.example` to `.env`, add your keys, and run `node --env-file=.env server/index.js`. Never commit `.env`.
 
-Tests: `npm test`. These include a real MP4 render through ffmpeg.
-
-End-to-end check against a running server: `npm run e2e:export`. It generates a script, exports an MP4, downloads it, and checks it with ffmpeg.
-
-## Deploy on Railway
-
-1. Create a new Railway project from this GitHub repository.
-2. Railway detects `railway.json` and builds the `Dockerfile`. The health check is `GET /api/health`.
-3. Set variables in the service settings (see the table below). The defaults work with no extra variables.
-4. Optional: add a **volume** if you want the local model stored across deploys (mount it and set `MODEL_DIR`). Exported videos are temporary and are deleted after `JOB_TTL_MINUTES`. Railway storage is not persistent unless you add a volume, so download your video promptly.
+`npm run dev` starts the API and Vite development server. `npm test` runs mocked provider, schema, artwork, cache, timing, HTTP API, and real FFmpeg tests without requiring paid credentials. `npm run e2e:export` exercises a running server and can consume provider quota.
 
 ## Environment variables
 
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `PORT` | `3000` | HTTP port (Railway sets this) |
-| `FFMPEG_BIN` | `ffmpeg` | Path to the ffmpeg binary |
-| `OUTPUT_DIR` | `$TMPDIR/stick-videos` | Where rendered MP4s and temp frames go |
-| `JOB_TTL_MINUTES` | `30` | Finished videos are deleted after this |
-| `MAX_EXPORT_QUEUE` | `3` | Maximum queued exports; more are rejected |
-| `LLM_ENABLED` | `true` | Set `false` to skip the model entirely |
-| `LLM_BASE_URL` | empty | OpenAI-compatible base URL, e.g. `https://api.groq.com/openai/v1`. Every story is written by this model from the user's prompt |
-| `LLM_API_KEY` | empty | API key for `LLM_BASE_URL`. Set it in Railway variables only; never commit it |
-| `LLM_MODEL` | `llama-3.1-8b-instant` | Model name sent to `LLM_BASE_URL` |
-| `LLAMA_URL` | empty | Used when `LLM_BASE_URL` is empty, e.g. `http://127.0.0.1:8080` for `llama-server`. Both empty = template generator only |
-| `LLM_TIMEOUT_MS` | `45000` | Per-request timeout for the model |
-| `LLM_COOLDOWN_MS` | `120000` | After a failure, skip the model for this long |
-| `LLM_MAX_TOKENS` | `900` | Output token cap |
-| `TTS_PROVIDER` | `auto` | `auto` (ElevenLabs neural voice when `ELEVENLABS_API` is set, otherwise local espeak, then free online fallback), `elevenlabs`, `espeak`, `gtts`, `http`, or `none` |
-| `ELEVENLABS_API` | empty | ElevenLabs API key. Set it in Railway variables only; never commit it |
-| `ELEVENLABS_VOICE_ID` | built-in male voice | Optional ElevenLabs voice ID to use instead |
-| `ELEVENLABS_MODEL_ID` | `eleven_multilingual_v2` | ElevenLabs TTS model |
-| `ESPEAK_BIN` | `espeak-ng` | Used when `TTS_PROVIDER=espeak` |
-| `TTS_URL` | empty | Used when `TTS_PROVIDER=http`: POSTs `{text, language}`, expects `audio/wav` |
-| `TTS_TIMEOUT_MS` | `30000` | TTS request timeout |
+| Variable | Default / purpose |
+| --- | --- |
+| `PORT`, `HOST` | `3000`, `0.0.0.0`; Railway supplies PORT |
+| `GROQ_API`, `GROQ_API_KEY` | Groq credential aliases; either selects Groq automatically |
+| `LLM_BASE_URL`, `LLM_API_KEY` | Explicit OpenAI-compatible provider override |
+| `LLAMA_URL` | Optional self-hosted compatible endpoint when LLM_BASE_URL is empty |
+| `LLM_MODEL` | `llama-3.1-8b-instant` |
+| `LLM_ENABLED` | `true`; false disables generation rather than enabling stock plots |
+| `LLM_TIMEOUT_MS`, `LLM_COOLDOWN_MS`, `LLM_MAX_TOKENS` | Request deadline, transient-error cooldown, storyboard output budget |
+| `ELEVENLABS_API`, `ELEVENLABS_API_KEY` | Neural speech credential aliases |
+| `ELEVENLABS_VOICE_ID` | Adam (`pNInz6obpgDQGcFmaJgB`); custom voices need account access |
+| `ELEVENLABS_MODEL_ID` | `eleven_multilingual_v2` |
+| `ELEVENLABS_STABILITY`, `ELEVENLABS_SIMILARITY_BOOST`, `ELEVENLABS_STYLE` | Expressiveness and voice identity settings, clamped to 0–1 |
+| `ELEVENLABS_SPEED`, `ELEVENLABS_USE_SPEAKER_BOOST` | Natural speech speed and speaker boost |
+| `TTS_PROVIDER` | `auto` means ElevenLabs only; alternatives require explicit `espeak`, `gtts`, `http`, or `none` |
+| `TTS_TIMEOUT_MS`, `ESPEAK_BIN`, `TTS_URL` | Speech deadline and explicit alternative-provider configuration |
+| `FFMPEG_BIN` | `ffmpeg` |
+| `OUTPUT_DIR`, `JOB_TTL_MINUTES`, `MAX_EXPORT_QUEUE` | Temporary output location, expiry, queue capacity |
 
-## Install the local model (optional)
+## Diagnostics and limits
 
-```bash
-scripts/download-model.sh           # downloads Qwen2.5-0.5B-Instruct Q4_K_M (~400 MB)
-llama-server -m models/qwen2.5-0.5b-instruct-q4_k_m.gguf --port 8080 -c 2048 --parallel 1
-export LLAMA_URL=http://127.0.0.1:8080
-```
+- `GET /api/health` is a lightweight deployment health check, not a live provider-authentication test.
+- `GET /api/config` reports safe provider status and deployment revision, never credentials.
+- `POST /api/diagnostics` refreshes supported connection checks without generating a story or paid speech.
+- Exports run one at a time and stream frames through FFmpeg. Output files expire; download promptly.
+- Drawings and animations are procedural, with a finite set of supported settings and actions. A storyboard can direct them but cannot invent arbitrary new artwork or reproduce a reference video exactly. This is not a diffusion/video-generation model.
+- Provider quota, live Railway credentials, and deployment status must be checked in the actual running service. Local mocked tests do not verify them.
 
-The model only writes script/scene JSON. It never generates frames. Every request is validated, and unknown actions or effects are replaced with safe defaults. No model output is executed. The default no-model story generator interprets supported genres and story cues; it is a curated procedural fallback, not an open-ended LLM.
+## Layout
 
-Note: the Railway image does not include `llama-server`. For Railway, use a hosted OpenAI-compatible API by setting `LLM_BASE_URL`, `LLM_API_KEY` and `LLM_MODEL`, or run a separate llama.cpp service and point `LLAMA_URL` at it.
-
-## Resource limits and memory
-
-- Exports render **one job at a time**, one frame at a time, into a single reused canvas. Frames are piped to ffmpeg as raw RGBA, so memory does not grow with video length.
-- ffmpeg runs with `-threads 2` and the `veryfast` preset.
-- The export queue is capped by `MAX_EXPORT_QUEUE`. Jobs can be cancelled.
-- Defaults are 720 px and 24 fps. The server clamps durations to 10–90 s, scenes to 12, and the generated cast to 8. The story chooses cast size and tone automatically.
-- Verified locally: the 30 s, 480×854, 12 fps zombie-story MP4 with AAC narration rendered and downloaded successfully in about 5 seconds using online TTS. 720p/1080p timings on Railway are not measured. Check your own with `npm run e2e:export`.
-
-If a Railway instance runs out of memory, lower the defaults with `MAX_EXPORT_QUEUE=1`, or request 480p in the UI.
-
-## Known limitations
-
-- MP4 export depends on `ffmpeg` being installed. If it is missing, the app says so and offers the WebM fallback, which is recorded in the browser and labelled WebM.
-- Narration is enabled by default. Docker includes offline espeak-ng; if it is missing, automatic TTS attempts a real online Google TTS response. Voice synthesis failure is reported rather than silently producing a no-voice MP4. `TTS_PROVIDER=none` is an explicit no-voice option. Online fallback needs outbound network access.
-- The stick figures are procedural. The action set is fixed, so the AI cannot invent new animations.
-- The local LLM is optional and not bundled. Without it, a prompt-aware procedural story generator picks story arcs (including the outbreak sequence), tone and cast. This is not a general-purpose LLM; unrelated open-ended ideas use genre-specific story templates.
-- Exported videos are not kept. Download them soon after rendering.
-
-## Project layout
-
-```
-shared/     schema validation, constants, renderer, subtitles (used by server and browser)
-server/     HTTP API, script generation (template + LLM), TTS adapters, ffmpeg exporter, job queue
-src/        React app: editor, preview player, WebM fallback
-tests/      node:test suites (schema, subtitles, template, pose math, queue, ffmpeg export)
-scripts/    e2e-export.mjs, download-model.sh
-```
+`shared/`: validation, illustrated renderer, poses, subtitles, audio timing. `server/`: AI generation, speech adapters/cache, API, job queue, FFmpeg export. `src/`: React studio, preview, browser recording. `tests/`: automated checks.

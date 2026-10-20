@@ -1,227 +1,150 @@
-// Narration provider adapters. Each adapter either produces a real audio file or
-// returns null. Audio is never fabricated: when no provider is available or
-// TTS_PROVIDER=none, the video is rendered with subtitles only.
-//
-// In 'auto' mode we prefer a configured ElevenLabs neural voice, then local
-// eSpeak NG, then Google TTS. All adapters return real audio bytes/files only.
+// Server-only narration adapters. Lower-quality voices require explicit opt-in;
+// a neural-provider failure must never silently change the narrator.
 import { spawn } from 'node:child_process';
-import { readFile, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { writeFile } from 'node:fs/promises';
 
-function run(cmd, args, timeoutMs) {
+export class TtsError extends Error {
+  constructor(message, { status = 503, code = 'TTS_UNAVAILABLE', retryable = false } = {}) {
+    super(message); this.name = 'TtsError'; this.status = status; this.code = code; this.retryable = retryable;
+  }
+}
+const missingKey = 'Natural male narration is unavailable: set ELEVENLABS_API or ELEVENLABS_API_KEY on the server, then restart. Or explicitly select TTS_PROVIDER=espeak/gtts for a lower-quality voice.';
+const MAX_BYTES = 10 * 1024 * 1024;
+const clean = (value) => String(value || '').trim();
+const clamp = (value, fallback, min, max) => Number.isFinite(Number(value)) && value !== undefined ? Math.max(min, Math.min(max, Number(value))) : fallback;
+
+function validMp3(bytes) {
+  if (bytes.length < 128) return false;
+  if (bytes.subarray(0, 3).toString() === 'ID3') return true;
+  return bytes[0] === 0xff && (bytes[1] & 0xe0) === 0xe0 && (bytes[1] & 6) !== 0 && (bytes[2] & 0xf0) !== 0xf0 && (bytes[2] & 0x0c) !== 0x0c;
+}
+async function boundedBody(res, limit) {
+  const length = Number(res.headers.get('content-length'));
+  if (length > limit) { await res.body?.cancel().catch(() => {}); throw new TtsError('Voice response exceeded the safe audio size limit.', { code: 'TTS_AUDIO_TOO_LARGE' }); }
+  if (!res.body) return Buffer.alloc(0);
+  const reader = res.body.getReader(); const chunks = []; let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read(); if (done) break;
+      size += value.byteLength;
+      if (size > limit) { await reader.cancel(); throw new TtsError('Voice response exceeded the safe audio size limit.', { code: 'TTS_AUDIO_TOO_LARGE' }); }
+      chunks.push(Buffer.from(value));
+    }
+  } finally { reader.releaseLock(); }
+  return Buffer.concat(chunks);
+}
+function upstreamError(status, bytes, provider) {
+  // Only classify allowlisted status codes; never expose the upstream body,
+  // which can contain credentials, request text, or other private metadata.
+  let reason = '';
+  try { const json = JSON.parse(bytes.toString()); reason = json?.detail?.status || json?.error?.code || ''; } catch { /* arbitrary upstream text is private */ }
+  if (reason === 'quota_exceeded' || reason === 'insufficient_credits') return new TtsError(`${provider} quota exhausted. Add credits or check the account plan.`, { code: 'TTS_QUOTA_EXCEEDED' });
+  if (status === 401 || reason === 'invalid_api_key') return new TtsError(`${provider} responded 401: API key rejected. Check the server key and text-to-speech permission.`, { code: 'TTS_BAD_KEY' });
+  if (status === 404 || reason === 'voice_not_found') return new TtsError(`${provider} voice was not found. Check ELEVENLABS_VOICE_ID and account voice access.`, { code: 'TTS_VOICE_NOT_FOUND' });
+  if (status === 403) return new TtsError(`${provider} denied voice access. Check key permissions, voice access, and account plan.`, { code: 'TTS_ACCESS_DENIED' });
+  if (status === 429) return new TtsError(`${provider} is rate limited or out of credits. Check account quota and retry shortly.`, { code: 'TTS_RATE_LIMITED', retryable: true });
+  return new TtsError(`${provider} responded ${status}. Check voice/model configuration or retry later.`, { code: 'TTS_PROVIDER_ERROR', retryable: status >= 500 });
+}
+async function requestAudio(url, options, timeoutMs, provider, mp3 = true) {
+  const controller = new AbortController(); let timer;
+  const timeout = new Promise((_, reject) => { timer = setTimeout(() => { controller.abort(); reject(new TtsError(`${provider} narration timed out. Please retry.`, { code: 'TTS_TIMEOUT', retryable: true })); }, timeoutMs); });
+  try {
+    return await Promise.race([timeout, (async () => {
+      const res = await fetch(url, { ...options, signal: controller.signal });
+      if (!res.ok) {
+        let body = Buffer.alloc(0);
+        try { body = await boundedBody(res, 8192); } catch { /* status alone is sufficient */ }
+        throw upstreamError(res.status, body, provider);
+      }
+      const bytes = await boundedBody(res, MAX_BYTES);
+      const type = res.headers.get('content-type') || '';
+      const wav = bytes.length >= 44 && bytes.subarray(0, 4).toString() === 'RIFF';
+      if (!/^audio\//i.test(type) || (mp3 ? !validMp3(bytes) : !(wav || validMp3(bytes)))) throw new TtsError(`${provider} returned invalid audio. Please retry or check provider configuration.`, { code: 'TTS_INVALID_AUDIO' });
+      return bytes;
+    })()]);
+  } catch (err) {
+    if (err instanceof TtsError) throw err;
+    throw new TtsError(`${provider} could not be reached. Please retry.`, { code: 'TTS_NETWORK_ERROR', retryable: true });
+  } finally { clearTimeout(timer); controller.abort(); }
+}
+function run(bin, args, timeoutMs) {
   return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { stdio: ['ignore', 'ignore', 'pipe'] });
-    let err = '';
+    const child = spawn(bin, args, { stdio: 'ignore' });
     const timer = setTimeout(() => child.kill('SIGKILL'), timeoutMs);
-    child.stderr.on('data', (d) => { if (err.length < 2000) err += d; });
-    child.on('error', (e) => { clearTimeout(timer); reject(e); });
-    child.on('close', (code) => {
-      clearTimeout(timer);
-      if (code === 0) resolve();
-      else reject(new Error(`${cmd} exited ${code}: ${err.trim().slice(0, 200)}`));
-    });
+    child.on('error', () => { clearTimeout(timer); reject(new TtsError('Explicit eSpeak voice is unavailable. Install espeak-ng or configure ElevenLabs.')); });
+    child.on('close', (code) => { clearTimeout(timer); code === 0 ? resolve() : reject(new TtsError('Explicit eSpeak voice failed to generate narration.')); });
   });
 }
-
-function langCode(lang = 'English') {
-  const s = String(lang || 'en').toLowerCase().trim();
-  const map = {
-    english: 'en', en: 'en', spanish: 'es', es: 'es', french: 'fr', fr: 'fr',
-    german: 'de', de: 'de', portuguese: 'pt', pt: 'pt', italian: 'it', it: 'it',
-    japanese: 'ja', ja: 'ja', korean: 'ko', ko: 'ko', hindi: 'hi', hi: 'hi',
-    arabic: 'ar', ar: 'ar', russian: 'ru', ru: 'ru', turkish: 'tr', tr: 'tr',
-  };
-  if (map[s]) return map[s];
-  const match = /^([a-z]{2})(?:[-_][a-z]{2})?$/i.exec(s);
-  return match ? match[1].toLowerCase() : 'en';
+function langCode(lang) {
+  const value = clean(lang || 'en').toLowerCase();
+  return ({ english: 'en', spanish: 'es', french: 'fr', german: 'de', portuguese: 'pt', italian: 'it', japanese: 'ja', korean: 'ko', hindi: 'hi', arabic: 'ar', russian: 'ru', turkish: 'tr' })[value] || (/^[a-z]{2}(?:[-_][a-z]{2})?$/.test(value) ? value.slice(0, 2) : 'en');
 }
 
-const espeak = (bin, timeoutMs) => ({
-  name: 'espeak-ng',
-  async available() {
-    try { await run(bin, ['--version'], 4000); return true; } catch { return false; }
-  },
-  async synth(text, outPath, lang) {
-    const v = langCode(lang);
-    // espeak-ng accepts voice names (en, es, etc.) via -v; `v` stays as safe, two-letter locale.
-    await run(bin, ['-v', v === 'en' ? 'en-us+m3' : v, '-s', '148', '-p', '42', '-w', outPath, text], timeoutMs);
-    return outPath;
-  },
-});
-
-const gtts = (timeoutMs) => ({
-  name: 'google-tts',
-  async available() { return true; },
-  async synth(text, outPath, lang) {
-    const tl = langCode(lang);
-    // Split text into <= 180 char chunks so the endpoint never truncates
-    const words = String(text || '').trim().split(/\s+/).filter(Boolean);
-    const chunks = [];
-    let cur = '';
-    for (const w of words) {
-      const next = cur ? `${cur} ${w}` : w;
-      if (next.length > 180 && cur) { chunks.push(cur); cur = w; }
-      else cur = next;
-    }
-    if (cur) chunks.push(cur);
-    if (!chunks.length) return null;
-
-    const buffers = [];
-    for (const chunk of chunks) {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), timeoutMs);
-      try {
-        const u = `https://translate.googleapis.com/translate_tts?ie=UTF-8&client=tw-ob&tl=${encodeURIComponent(tl)}&q=${encodeURIComponent(chunk)}`;
-        const res = await fetch(u, {
-          headers: { 'user-agent': 'Mozilla/5.0' },
-          signal: controller.signal,
-        });
-        if (!res.ok) throw new Error(`gtts responded ${res.status}`);
-        const buf = Buffer.from(await res.arrayBuffer());
-        if (buf.length < 128) throw new Error('gtts returned empty audio');
-        const contentType = res.headers.get('content-type') || '';
-        if (!contentType.startsWith('audio/')) throw new Error(`gtts returned ${contentType || 'no content-type'} instead of audio`);
-        buffers.push(buf);
-      } finally {
-        clearTimeout(timer);
-      }
-    }
-    const mp3Path = `${outPath}.mp3`;
-    await writeFile(mp3Path, Buffer.concat(buffers));
-    // Re-open and validate the provider's returned bytes before exposing an audio file.
-    const mp3 = await readFile(mp3Path);
-    if (mp3.length < 128 || mp3[0] !== 0xff || (mp3[1] & 0xe0) !== 0xe0) {
-      throw new Error('Google TTS response was not a valid MP3 stream');
-    }
-    return mp3Path;
-  },
-});
-
-const elevenLabs = (config, timeoutMs) => ({
-  name: 'elevenlabs-neural-male',
-  async available() { return Boolean(config.elevenLabsApiKey); },
-  async synth(text, outPath, lang) {
-    const voiceId = config.elevenLabsVoiceId || 'pNInz6obpgDQGcFmaJgB';
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      const url = `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=mp3_44100_128`;
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'xi-api-key': config.elevenLabsApiKey,
-          'content-type': 'application/json',
-          accept: 'audio/mpeg',
-        },
-        body: JSON.stringify({
-          text,
-          model_id: config.elevenLabsModelId || 'eleven_multilingual_v2',
-          voice_settings: { stability: 0.48, similarity_boost: 0.78, style: 0.18, use_speaker_boost: true, speed: 0.94 },
-        }),
-        signal: controller.signal,
-      });
-      if (!res.ok) {
-        const message = (await res.text()).slice(0, 240);
-        throw new Error(`ElevenLabs responded ${res.status}: ${message}`);
-      }
-      const type = res.headers.get('content-type') || '';
-      if (!type.toLowerCase().includes('audio')) throw new Error(`ElevenLabs returned ${type || 'no content type'}, expected audio`);
-      const audio = Buffer.from(await res.arrayBuffer());
-      if (audio.length < 128 || audio[0] !== 0xff || (audio[1] & 0xe0) !== 0xe0) throw new Error('ElevenLabs returned an invalid MP3 stream');
-      const mp3Path = `${outPath}.mp3`;
-      await writeFile(mp3Path, audio);
-      return mp3Path;
-    } finally {
-      clearTimeout(timer);
-    }
-  },
-});
-
-const http = (url, timeoutMs) => ({
-  name: 'http',
-  async available() { return Boolean(url); },
-  async synth(text, outPath, lang) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ text, language: lang }),
-        signal: controller.signal,
-      });
-      if (!res.ok) throw new Error(`TTS endpoint responded ${res.status}`);
-      const type = res.headers.get('content-type') || '';
-      if (!type.includes('audio')) throw new Error(`TTS endpoint returned ${type || 'no content type'}, expected audio`);
-      const buf = Buffer.from(await res.arrayBuffer());
-      if (buf.length < 44) throw new Error('TTS endpoint returned an empty audio file');
-      await writeFile(outPath, buf);
-      return outPath;
-    } finally {
-      clearTimeout(timer);
-    }
-  },
-});
-
-const none = { name: 'none', async available() { return false; }, async synth() { return null; } };
-
-/** Pick a provider from config. Resolves availability once at startup, with fallback in auto mode. */
 export async function createTts(config = {}) {
-  const mode = config.ttsProvider || 'auto';
-  const timeout = config.ttsTimeoutMs || 30000;
-  const espeakBin = config.espeakBin || 'espeak-ng';
-  const neural = elevenLabs(config, timeout);
-
-  if (mode === 'none') {
-    return { name: 'none', enabled: false, synth: async () => null };
-  }
-
-  if (mode === 'espeak') {
-    const p = espeak(espeakBin, timeout);
-    const ok = await p.available();
-    if (!ok) throw new Error(`TTS_PROVIDER=espeak requested but ${espeakBin} was not found.`);
-    return { name: p.name, enabled: true, synth: (t, o, l) => p.synth(t, o, l) };
-  }
-
-  if (mode === 'elevenlabs') {
-    if (!config.elevenLabsApiKey) throw new Error('TTS_PROVIDER=elevenlabs requires ELEVENLABS_API.');
-    return { name: neural.name, enabled: true, synth: (t, o, l) => neural.synth(t, o, l) };
-  }
-
-  if (mode === 'http') {
-    if (!config.ttsUrl) throw new Error('TTS_PROVIDER=http requires TTS_URL.');
-    const p = http(config.ttsUrl, timeout);
-    return { name: 'http', enabled: true, synth: (t, o, l) => p.synth(t, o, l) };
-  }
-
-  if (mode === 'gtts') {
-    const p = gtts(timeout);
-    return { name: p.name, enabled: true, synth: (t, o, l) => p.synth(t, o, l) };
-  }
-
-  // 'auto': paid/keyed neural voice first; offline eSpeak NG next; network Google TTS last.
-  const esp = espeak(espeakBin, timeout);
-  const hasEsp = await esp.available();
-  const gt = gtts(timeout);
-  const useNeural = await neural.available();
-
-  // Free voices are the fallback: a failing ElevenLabs call (bad key, quota, network)
-  // must never stop narration, so the user still gets voiced output.
+  const mode = clean(config.ttsProvider || 'auto').toLowerCase();
+  const key = clean(config.elevenLabsApiKey) || clean(config.ELEVENLABS_API_KEY) || clean(config.ELEVENLABS_API);
+  const voiceId = clean(config.elevenLabsVoiceId) || 'pNInz6obpgDQGcFmaJgB';
+  const model = clean(config.elevenLabsModelId) || 'eleven_multilingual_v2';
+  const timeout = clamp(config.ttsTimeoutMs, 30000, 1, 120000);
+  let provider = mode === 'auto' ? 'elevenlabs' : mode;
+  let configured = false, quality = 'unavailable', synth;
+  let authenticated = null, lastError = null;
+  if (provider === 'elevenlabs') {
+    configured = Boolean(key); quality = 'neural';
+    if (!configured && mode === 'elevenlabs') throw new TtsError(`TTS_PROVIDER=elevenlabs requires ELEVENLABS_API or ELEVENLABS_API_KEY. ${missingKey}`);
+    synth = async (text, outPath) => {
+      if (!configured) throw new TtsError(missingKey, { code: 'TTS_NOT_CONFIGURED' });
+      const audio = await requestAudio(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=mp3_44100_128`, {
+        method: 'POST', headers: { 'xi-api-key': key, 'content-type': 'application/json', accept: 'audio/mpeg' },
+        body: JSON.stringify({ text, model_id: model, voice_settings: {
+          stability: clamp(config.elevenLabsStability, 0.4, 0, 1), similarity_boost: clamp(config.elevenLabsSimilarityBoost, 0.78, 0, 1),
+          style: clamp(config.elevenLabsStyle, 0.25, 0, 1), use_speaker_boost: config.elevenLabsUseSpeakerBoost !== false,
+          speed: clamp(config.elevenLabsSpeed, 1, 0.7, 1.2),
+        } }),
+      }, timeout, 'ElevenLabs');
+      authenticated = true;
+      const path = `${outPath}.mp3`; await writeFile(path, audio); return path;
+    };
+  } else if (provider === 'none') {
+    quality = 'disabled'; synth = async () => null;
+  } else if (provider === 'espeak') {
+    quality = 'robotic-explicit';
+    await run(config.espeakBin || 'espeak-ng', ['--version'], 4000); configured = true;
+    synth = async (text, path, lang) => { await run(config.espeakBin || 'espeak-ng', ['-v', langCode(lang) === 'en' ? 'en-us+m3' : langCode(lang), '-s', '148', '-p', '42', '-w', path, text], timeout); return path; };
+  } else if (provider === 'gtts') {
+    configured = true; quality = 'basic-explicit';
+    synth = async (text, path, lang) => {
+      const words = clean(text).split(/\s+/).filter(Boolean); const chunks = []; let chunk = '';
+      for (const word of words) { if (`${chunk} ${word}`.length > 180 && chunk) { chunks.push(chunk); chunk = ''; } chunk = chunk ? `${chunk} ${word}` : word; }
+      if (chunk) chunks.push(chunk);
+      const audio = []; let size = 0;
+      for (const part of chunks) {
+        const bytes = await requestAudio(`https://translate.googleapis.com/translate_tts?ie=UTF-8&client=tw-ob&tl=${langCode(lang)}&q=${encodeURIComponent(part)}`, { headers: { 'user-agent': 'Mozilla/5.0' } }, timeout, 'Google TTS');
+        size += bytes.length; if (size > MAX_BYTES) throw new TtsError('Narration exceeds safe audio size limit.'); audio.push(bytes);
+      }
+      if (!size) throw new TtsError('Narration text is empty.');
+      const out = `${path}.mp3`; await writeFile(out, Buffer.concat(audio)); return out;
+    };
+  } else if (provider === 'http') {
+    if (!clean(config.ttsUrl)) throw new TtsError('TTS_PROVIDER=http requires TTS_URL.');
+    configured = true; quality = 'custom';
+    synth = async (text, path, language) => {
+      const bytes = await requestAudio(config.ttsUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text, language }) }, timeout, 'Custom TTS', false);
+      const out = validMp3(bytes) ? `${path}.mp3` : path; await writeFile(out, bytes); return out;
+    };
+  } else throw new TtsError('Unknown TTS_PROVIDER. Use auto, elevenlabs, none, espeak, gtts, or http.');
+  const enabled = configured && provider !== 'none';
   return {
-    name: useNeural ? neural.name : (hasEsp ? 'espeak-ng' : 'google-tts'),
-    enabled: true,
-    async synth(text, outPath, lang) {
-      if (useNeural) {
-        try {
-          return await neural.synth(text, outPath, lang);
-        } catch (err) {
-          console.warn(`ElevenLabs narration failed, falling back to free voice: ${err.message}`);
-        }
+    name: provider === 'elevenlabs' ? 'elevenlabs-neural-male' : provider === 'espeak' ? 'espeak-ng' : provider === 'gtts' ? 'google-tts' : provider,
+    enabled, error: !enabled && provider !== 'none' ? missingKey : null,
+    status() { return { provider, configured, enabled, quality, voiceId: provider === 'elevenlabs' ? voiceId : null, model: provider === 'elevenlabs' ? model : null, authenticated, lastError }; },
+    async synth(...args) {
+      try { const result = await synth(...args); lastError = null; return result; }
+      catch (err) {
+        const safe = err instanceof TtsError ? err : new TtsError('Voice generation failed. Check server/provider configuration.');
+        if (safe.code === 'TTS_BAD_KEY') authenticated = false;
+        lastError = { message: safe.message, code: safe.code, retryable: safe.retryable }; throw safe;
       }
-      if (hasEsp) {
-        try { return await esp.synth(text, outPath, lang); } catch { /* fall through to gtts */ }
-      }
-      return gt.synth(text, outPath, lang);
     },
   };
 }
