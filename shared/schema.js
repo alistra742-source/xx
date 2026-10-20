@@ -42,6 +42,40 @@ export function normalizeBackground(value) {
   return 'street';
 }
 
+/** Sanitize an AI-drawn backdrop: gradients, a horizon line and up to 60 simple shapes in 0-1 coordinates. */
+export function normalizeBackdrop(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const col = (v, d) => hexColor(v, d);
+  const pair = (v, a, b) => (Array.isArray(v) ? [col(v[0], a), col(v[1], b)] : [a, b]);
+  const n01 = (v, d) => clamp(num(v, d), -0.5, 1.5);
+  const shapes = [];
+  for (const sh of (Array.isArray(raw.shapes) ? raw.shapes : []).slice(0, 60)) {
+    if (!sh || typeof sh !== 'object') continue;
+    const t = String(sh.t || sh.type || '').toLowerCase();
+    const c = col(sh.c || sh.color, '#64748b');
+    const alpha = clamp(num(sh.a ?? sh.alpha, 1), 0.05, 1);
+    if (t === 'rect') shapes.push({ t, c, a: alpha, x: n01(sh.x, 0), y: n01(sh.y, 0), w: clamp(num(sh.w, 0.1), 0, 2), h: clamp(num(sh.h, 0.1), 0, 2) });
+    else if (t === 'circle') shapes.push({ t, c, a: alpha, x: n01(sh.x, 0.5), y: n01(sh.y, 0.5), r: clamp(num(sh.r, 0.05), 0, 1) });
+    else if (t === 'ellipse') shapes.push({ t, c, a: alpha, x: n01(sh.x, 0.5), y: n01(sh.y, 0.5), rx: clamp(num(sh.rx, 0.1), 0, 1), ry: clamp(num(sh.ry, 0.05), 0, 1) });
+    else if (t === 'poly' || t === 'polygon') {
+      const pts = (Array.isArray(sh.p ?? sh.points) ? (sh.p ?? sh.points) : []).slice(0, 16)
+        .map((pt) => (Array.isArray(pt) ? [n01(pt[0], 0), n01(pt[1], 0)] : null)).filter(Boolean);
+      if (pts.length >= 3) shapes.push({ t: 'poly', c, a: alpha, p: pts });
+    }
+  }
+  if (shapes.length === 0 && !Array.isArray(raw.sky)) return null;
+  const sky = pair(raw.sky, '#1e293b', '#475569');
+  const lum = (h) => (parseInt(h.slice(1, 3), 16) * 0.299 + parseInt(h.slice(3, 5), 16) * 0.587 + parseInt(h.slice(5, 7), 16) * 0.114) / 255;
+  return {
+    name: str(raw.name, 40, 'custom'),
+    sky,
+    ground: pair(raw.ground, '#334155', '#1e293b'),
+    horizon: clamp(num(raw.horizon, 0.8), 0.6, 0.9),
+    dark: (lum(sky[0]) + lum(sky[1])) / 2 < 0.5,
+    shapes,
+  };
+}
+
 export function normalizeEffect(value) {
   const key = String(value ?? '').toLowerCase().trim().replace(/[\s-]+/g, '_');
   if (EFFECTS.includes(key)) return key;
@@ -239,10 +273,12 @@ function normalizeScene(raw, index, characters, warnings) {
     .filter((e, i, arr) => e && arr.indexOf(e) === i)
     .slice(0, LIMITS.maxEffects);
 
+  const backdrop = normalizeBackdrop(scene.backdrop);
   return {
     id: `s${index + 1}`,
     duration: clamp(num(scene.duration, 5), LIMITS.minSceneSeconds, LIMITS.maxSceneSeconds),
-    background: normalizeBackground(scene.background),
+    background: backdrop && String(scene.background) === 'custom' ? 'custom' : normalizeBackground(scene.background),
+    ...(backdrop && String(scene.background) === 'custom' ? { backdrop } : {}),
     narration: str(scene.narration, LIMITS.maxNarrationChars, ''),
     characters: chars,
     effects,
@@ -302,7 +338,17 @@ export function normalizeProject(raw, defaults = {}) {
 
   const rawScenes = Array.isArray(src.scenes) ? src.scenes : [];
   if (rawScenes.length === 0) throw new ValidationError('The script has no scenes.', 'scenes');
-  const scenes = rawScenes.slice(0, LIMITS.maxScenes).map((s, i) => normalizeScene(s, i, characters, warnings));
+  // The model draws 1-3 backdrops for the story; each scene points at one by index.
+  const backdrops = (Array.isArray(src.backdrops) ? src.backdrops : []).slice(0, 3).map(normalizeBackdrop).filter(Boolean);
+  let lastIdx = 0;
+  const scenes = rawScenes.slice(0, LIMITS.maxScenes).map((s, i) => {
+    if (backdrops.length && s && typeof s === 'object' && !s.backdrop) {
+      const idx = Number.isInteger(s.backdropIndex) ? clamp(s.backdropIndex, 0, backdrops.length - 1) : lastIdx;
+      lastIdx = idx;
+      return normalizeScene({ ...s, background: 'custom', backdrop: backdrops[idx] }, i, characters, warnings);
+    }
+    return normalizeScene(s, i, characters, warnings);
+  });
   if (rawScenes.length > LIMITS.maxScenes) warnings.push(`Trimmed to ${LIMITS.maxScenes} scenes.`);
 
   fitDurations(scenes, duration);

@@ -21,10 +21,6 @@ const SETTING_WORDS = {
   lab: 'lab', laboratory: 'lab', hospital: 'lab', clinic: 'lab',
   bedroom: 'bedroom', house: 'bedroom', home: 'bedroom', apartment: 'bedroom', kitchen: 'bedroom',
   studio: 'white',
-  space: 'space', galaxy: 'space', planet: 'space', moon: 'space', alien: 'space', aliens: 'space', astronaut: 'space', spaceship: 'space', mars: 'space',
-  beach: 'beach', ocean: 'beach', sea: 'beach', island: 'beach', pirate: 'beach', pirates: 'beach', shark: 'beach', surf: 'beach',
-  snow: 'snow', winter: 'snow', arctic: 'snow', ice: 'snow', blizzard: 'snow', antarctica: 'snow', christmas: 'snow',
-  castle: 'castle', kingdom: 'castle', medieval: 'castle', knight: 'castle', knights: 'castle', dragon: 'castle', wizard: 'castle', king: 'castle', fantasy: 'castle',
 };
 
 /** Returns the first setting named in the topic, or null. */

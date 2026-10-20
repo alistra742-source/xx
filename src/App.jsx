@@ -364,6 +364,7 @@ export default function App() {
                     </label>
                     <label>Background
                       <select value={sc.background} onChange={(e) => updateScene(i, { background: e.target.value })}>
+                        {sc.background === 'custom' && <option value="custom">AI-drawn: {sc.backdrop?.name || 'custom'}</option>}
                         {(config?.backgrounds ?? []).map((b) => <option key={b} value={b}>{b}</option>)}
                       </select>
                     </label>

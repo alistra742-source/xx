@@ -884,7 +884,8 @@ export function renderFrame(ctx, scene, t, opts) {
   const dur = Math.max(0.001, scene.duration);
   const local = Math.max(0, Math.min(t, dur));
   const progress = local / dur;
-  const bgInfo = BACKGROUND_INFO[scene.background] ?? BACKGROUND_INFO.street;
+  const backdrop = scene.background === 'custom' ? scene.backdrop : null;
+  const bgInfo = backdrop ? { dark: backdrop.dark, ground: backdrop.horizon } : (BACKGROUND_INFO[scene.background] ?? BACKGROUND_INFO.street);
   const dark = !!bgInfo.dark;
   const defaultInk = dark ? '#f8fafc' : '#0f172a';
   const L = layoutFor(W, H, scene.characters.length);
@@ -902,7 +903,7 @@ export function renderFrame(ctx, scene, t, opts) {
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, W, H);
-  drawBackground(ctx, scene.background, W, H, local);
+  drawBackground(ctx, scene.background, W, H, local, backdrop);
 
   // Camera: zoom around the centre plus shake.
   const shakeAmp = effects.includes('shake') ? 0.0065 : 0.0025;
@@ -913,7 +914,7 @@ export function renderFrame(ctx, scene, t, opts) {
   ctx.translate(-W / 2, -H / 2);
   // Props and actors must share the camera or sleepers drift off pillows.
   // The first pass remains as overscan underpainting at shaken frame edges.
-  if (zoom !== 1 || shaken) drawBackground(ctx, scene.background, W, H, local);
+  if (zoom !== 1 || shaken) drawBackground(ctx, scene.background, W, H, local, backdrop);
 
   if (effects.includes('night')) drawTint(ctx, W, H, 'rgba(8,15,45,0.32)');
   if (effects.includes('day')) drawTint(ctx, W, H, 'rgba(255,230,160,0.08)');

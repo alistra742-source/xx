@@ -24,7 +24,7 @@ export function loadConfig(env = process.env) {
     llmModel: env.LLM_MODEL || 'llama-3.1-8b-instant',
     llmTimeoutMs: num(env.LLM_TIMEOUT_MS, 45000),
     llmCooldownMs: num(env.LLM_COOLDOWN_MS, 120000),
-    llmMaxTokens: num(env.LLM_MAX_TOKENS, 900),
+    llmMaxTokens: num(env.LLM_MAX_TOKENS, 3500),
     // Narration: ElevenLabs neural voice when ELEVENLABS_API is configured; otherwise auto fallback.
     ttsProvider: env.TTS_PROVIDER || 'auto',
     espeakBin: env.ESPEAK_BIN || 'espeak-ng',
