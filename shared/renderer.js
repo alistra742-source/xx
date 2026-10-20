@@ -3,16 +3,40 @@
 // (hats, hoodies, suits, shades, chains, headphones, weapons), zombie green infection
 // transformations, props, and dynamic effects.
 import { solvePose, buildSkeleton } from './stickfigure.js';
-import { drawBackground, drawTint, BACKGROUND_INFO } from './scenery.js';
+import { drawBackground, drawTint, BACKGROUND_INFO, bedroomLayout } from './scenery.js';
 import { ZOMBIE_COLOR, ZOMBIE_GLOW } from './constants.js';
 
 const TWO_PI = Math.PI * 2;
 
 /** Scene and project geometry for a given output size. */
 export function layoutFor(W, H, characterCount = 1) {
-  const factor = characterCount >= 5 ? 0.34 : characterCount >= 3 ? 0.39 : 0.44;
-  const scale = Math.min(W, H) * factor;
+  // Frame-aware composition keeps the latest larger figures readable in both
+  // wide and portrait output without cropping their shoes or expressive heads.
+  const n = Math.max(1, characterCount);
+  const scale = Math.min(H * (n > 3 ? 0.56 : 0.66), W * (n === 1 ? 0.86 : n === 2 ? 0.64 : 1.55 / n));
   return { W, H, scale, groundFraction: BACKGROUND_INFO.white.ground };
+}
+
+/** Furniture-aware blocking, shared with tests and independent of canvas. */
+export function bedroomStaging(action, progress, W, H, requestedScale) {
+  const { bed, ground, window, tv } = bedroomLayout(W, H);
+  const ease = (a, b, p) => {
+    const k = Math.max(0, Math.min(1, p));
+    return a + (b - a) * k * k * (3 - 2 * k);
+  };
+  if (action === 'sleep' || action === 'wake_up') {
+    const scale = Math.min(requestedScale, bed.w / 1.10);
+    const p = action === 'sleep' ? 0 : progress;
+    const sitX = bed.x + bed.w - scale * 0.035;
+    const standX = bed.x + bed.w + scale * 0.11;
+    const x = p < 0.58 ? ease(bed.x + bed.w * 0.56, sitX, (p - 0.12) / 0.29) : ease(sitX, standX, (p - 0.58) / 0.28);
+    const seatedY = bed.mattressY - scale * 0.035;
+    const hipY = p < 0.58 ? ease(bed.mattressY - scale * 0.11, seatedY, (p - 0.12) / 0.29) : ease(seatedY, ground - scale * 0.424, (p - 0.58) / 0.28);
+    return { x, scale, hipY, groundY: ground, facing: 1, inBed: p < 0.58 };
+  }
+  if (action === 'look_window') return { x: window.x + window.w * 0.28 - requestedScale * 0.05, scale: Math.min(requestedScale, H * 0.60, W * 0.70), groundY: ground, facing: 1 };
+  if (action === 'watch_tv') return { x: tv.x - W * 0.13, scale: Math.min(requestedScale, H * 0.43, W * 0.65), groundY: ground, facing: 1 };
+  return null;
 }
 
 function parseHex(hex) {
@@ -473,10 +497,7 @@ function drawProp(ctx, sk, scale, t) {
 
 function drawFigure(ctx, sk, { ink, lineWidth, face, shadowColor, scale, drip, isZombie, t }) {
   const seg = (a, b) => { ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke(); };
-  const curve = (a, mid, b) => { ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.quadraticCurveTo(mid[0], mid[1], b[0], b[1]); ctx.stroke(); };
-
   const inf = isZombie ? 1 : (sk.infection || 0);
-  const bodyInk = inf > 0 ? lerpColor(ink, ZOMBIE_COLOR, inf) : ink;
 
   // Ground shadow first (under feet).
   if (shadowColor) {
@@ -512,54 +533,70 @@ function drawFigure(ctx, sk, { ink, lineWidth, face, shadowColor, scale, drip, i
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
 
-  // Clean dark outer contour gives the illustrated figures the thick inked edge
-  // of the supplied reference instead of the thin, wire-like original strokes.
-  const outlineW = lineWidth * 1.95;
-  ctx.strokeStyle = '#101522';
-  ctx.lineWidth = outlineW;
-  seg(sk.lHip, sk.lKnee); seg(sk.lKnee, sk.lFoot);
-  seg(sk.rHip, sk.rKnee); seg(sk.rKnee, sk.rFoot);
-  curve(sk.hip, sk.chest, sk.neck);
-  seg(sk.lShoulder, sk.lElbow); seg(sk.lElbow, sk.lHand);
-  seg(sk.rShoulder, sk.rElbow); seg(sk.rElbow, sk.rHand);
-
-  // Main limb pass: back limbs, torso spine, clothes drip, front limbs
-  ctx.strokeStyle = '#f8fafc';
-  ctx.fillStyle = '#f8fafc';
-  ctx.lineWidth = lineWidth * 1.2;
-
-  // Legs
-  seg(sk.lHip, sk.lKnee); seg(sk.lKnee, sk.lFoot);
-  seg(sk.rHip, sk.rKnee); seg(sk.rKnee, sk.rFoot);
-  // Spine
-  curve(sk.hip, sk.chest, sk.neck);
-  // Back arm
-  seg(sk.lShoulder, sk.lElbow); seg(sk.lElbow, sk.lHand);
-
-  // Draw top clothing / drip over torso
-  drawTopDrip(ctx, sk, drip, lineWidth, bodyInk);
-
-  // Front arm over torso garment
-  ctx.strokeStyle = bodyInk;
-  ctx.lineWidth = lineWidth;
-  seg(sk.rShoulder, sk.rElbow); seg(sk.rElbow, sk.rHand);
-
-  // Soft mitten-like hands and rounded sneakers make the characters read as
-  // illustrated people rather than plain articulated wire figures.
-  const glove = drip?.outfitColor || '#e9eef2';
-  ctx.fillStyle = glove;
-  ctx.strokeStyle = '#101522';
-  ctx.lineWidth = Math.max(1.5, lineWidth * 0.32);
-  for (const p of [sk.lHand, sk.rHand]) {
-    ctx.beginPath(); ctx.ellipse(p[0], p[1], lineWidth * 1.45, lineWidth * 1.18, 0, 0, TWO_PI); ctx.fill(); ctx.stroke();
+  // Filled articulated anatomy retains the latest inked contour and soft
+  // mitten styling, with actual clothing, denim volume and rounded sneakers.
+  const outline = '#172334';
+  const skin = inf > 0 ? lerpColor('#fff9e9', '#a3d978', inf) : '#fff9ed';
+  const defaultShirt = ['#f8fafc', '#0f172a', ZOMBIE_COLOR].includes(ink) ? '#ed873d' : ink;
+  const outfit = { top: 'tshirt', outfitColor: defaultShirt, accentColor: '#f8d481', ...drip };
+  if (outfit.top === 'none') outfit.top = 'tshirt';
+  const shirt = outfit.outfitColor || '#ed873d';
+  const limb = (a, b, width, color, light = true) => {
+    ctx.strokeStyle = outline; ctx.lineWidth = width + scale * 0.012; seg(a, b);
+    ctx.strokeStyle = color; ctx.lineWidth = width; seg(a, b);
+    if (light) {
+      ctx.strokeStyle = 'rgba(255,245,216,0.18)'; ctx.lineWidth = width * 0.18;
+      seg([a[0] - width * 0.22, a[1]], [b[0] - width * 0.22, b[1]]);
+    }
+  };
+  for (const [hip, knee, foot, col] of [
+    [sk.lHip, sk.lKnee, sk.lFoot, '#283e56'],
+    [sk.rHip, sk.rKnee, sk.rFoot, '#37516c'],
+  ]) {
+    limb(hip, knee, scale * 0.064, col);
+    limb(knee, foot, scale * 0.052, col);
+    ctx.save(); ctx.translate(foot[0], foot[1]); ctx.scale(sk.facing || 1, 1);
+    ctx.fillStyle = '#152536'; ctx.strokeStyle = outline; ctx.lineWidth = scale * 0.009;
+    ctx.beginPath(); ctx.moveTo(-scale * 0.035, -scale * 0.032);
+    ctx.quadraticCurveTo(scale * 0.045, -scale * 0.047, scale * 0.076, -scale * 0.009);
+    ctx.lineTo(scale * 0.077, scale * 0.012); ctx.lineTo(-scale * 0.038, scale * 0.012);
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = '#d9e4e6'; ctx.lineWidth = scale * 0.009;
+    seg([-scale * 0.03, scale * 0.003], [scale * 0.068, scale * 0.003]);
+    ctx.strokeStyle = '#a7bacb'; ctx.lineWidth = scale * 0.004;
+    seg([scale * 0.012, -scale * 0.023], [scale * 0.032, -scale * 0.012]);
+    ctx.restore();
   }
-  const shoeColor = drip?.top && drip.top !== 'none' ? (drip.accentColor || bodyInk) : bodyInk;
-  ctx.strokeStyle = shoeColor;
-  ctx.lineWidth = lineWidth * 1.15;
-  const fDir = sk.facing || 1;
-  for (const p of [sk.lFoot, sk.rFoot]) {
-    seg([p[0] - fDir * scale * 0.025, p[1]], [p[0] + fDir * scale * 0.055, p[1]]);
-  }
+  limb(sk.lHip, sk.rHip, scale * 0.065, '#31475d');
+  const arm = (sh, el, hand) => {
+    limb(sh, el, scale * 0.048, skin);
+    limb(el, hand, scale * 0.038, skin);
+    const long = !['tshirt', 'vest', 'tattered'].includes(outfit.top);
+    if (outfit.top !== 'vest') {
+      const end = long ? el : [sh[0] + (el[0] - sh[0]) * 0.52, sh[1] + (el[1] - sh[1]) * 0.52];
+      limb(sh, end, scale * (outfit.top === 'puff_jacket' ? 0.076 : 0.065), shirt);
+      if (long) limb(el, [el[0] + (hand[0] - el[0]) * 0.84, el[1] + (hand[1] - el[1]) * 0.84], scale * 0.051, shirt);
+    }
+    ctx.fillStyle = skin; ctx.strokeStyle = outline; ctx.lineWidth = scale * 0.007;
+    ctx.beginPath(); ctx.ellipse(hand[0], hand[1], scale * 0.027, scale * 0.032, -0.25, 0, TWO_PI); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.arc(hand[0] - scale * 0.02, hand[1] - scale * 0.006, scale * 0.012, 0, TWO_PI); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = 'rgba(93,64,48,0.35)'; ctx.lineWidth = scale * 0.003;
+    seg([hand[0] + scale * 0.003, hand[1] + scale * 0.009], [hand[0] + scale * 0.018, hand[1] + scale * 0.012]);
+  };
+  arm(sk.lShoulder, sk.lElbow, sk.lHand);
+  limb(sk.shoulder, sk.neck, scale * 0.055, skin);
+  drawTopDrip(ctx, sk, outfit, scale * 0.039, outline);
+  ctx.save(); ctx.translate(sk.shoulder[0], sk.shoulder[1]); ctx.rotate(sk.torsoAngle || 0);
+  const torsoH = Math.hypot(sk.hip[0] - sk.shoulder[0], sk.hip[1] - sk.shoulder[1]);
+  const fabric = ctx.createLinearGradient(-scale * 0.07, 0, scale * 0.07, 0);
+  fabric.addColorStop(0, 'rgba(255,232,176,0.30)'); fabric.addColorStop(0.45, 'rgba(255,255,255,0)'); fabric.addColorStop(1, 'rgba(38,29,48,0.28)');
+  ctx.fillStyle = fabric;
+  ctx.beginPath(); ctx.moveTo(-scale * 0.073, 0); ctx.lineTo(scale * 0.073, 0); ctx.lineTo(scale * 0.06, torsoH); ctx.lineTo(-scale * 0.06, torsoH); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = 'rgba(66,35,26,0.4)'; ctx.lineWidth = scale * 0.005;
+  ctx.beginPath(); ctx.arc(0, -scale * 0.008, scale * 0.027, 0, Math.PI); ctx.stroke();
+  seg([-scale * 0.052, torsoH - scale * 0.013], [scale * 0.052, torsoH - scale * 0.013]);
+  ctx.restore();
+  arm(sk.rShoulder, sk.rElbow, sk.rHand);
 
   // Soft porcelain face with an inked edge, cheek glow and tiny moving eye blinks.
   const [hx, hy] = sk.head;
@@ -585,16 +622,21 @@ function drawFigure(ctx, sk, { ink, lineWidth, face, shadowColor, scale, drip, i
   ctx.beginPath(); ctx.arc(hx, hy, r, 0, TWO_PI); ctx.fill();
   ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
   ctx.stroke();
+  ctx.fillStyle = 'rgba(238,149,112,0.20)';
+  for (const side of [-1, 1]) {
+    ctx.beginPath(); ctx.ellipse(hx + side * r * 0.59, hy + r * 0.24, r * 0.18, r * 0.1, 0, 0, TWO_PI); ctx.fill();
+  }
+  ctx.strokeStyle = 'rgba(73,82,88,0.5)'; ctx.lineWidth = scale * 0.004;
+  ctx.beginPath(); ctx.moveTo(hx + face.gaze * r * 0.12, hy + r * 0.01); ctx.quadraticCurveTo(hx + r * 0.13, hy + r * 0.15, hx + r * 0.03, hy + r * 0.18); ctx.stroke();
+
   // Soft painted highlight along the forehead.
   ctx.strokeStyle = inf > 0.3 ? 'rgba(255,255,255,0.24)' : 'rgba(255,255,255,0.78)';
   ctx.lineWidth = Math.max(1.2, r * 0.045);
   ctx.lineCap = 'round';
   ctx.beginPath(); ctx.arc(hx - r * 0.04, hy - r * 0.02, r * 0.82, Math.PI * 1.13, Math.PI * 1.62); ctx.stroke();
 
-  // Eyes remain dark and legible against the pale face, with a natural blink every few seconds.
-  const blinkPhase = (t + Math.abs(hx) * 0.007) % 4.2;
-  const blink = blinkPhase > 4.02 ? Math.max(0.08, 1 - Math.sin(((blinkPhase - 4.02) / 0.18) * Math.PI)) : 1;
-  const eyeOpen = face.eye < 0.25 ? face.eye : face.eye * blink;
+  // solvePose supplies natural blinking independently of camera coordinates.
+  const eyeOpen = face.eye;
   const eyeR = Math.max(1.5, r * 0.125 * Math.min(1.65, Math.max(0.5, eyeOpen)));
   const gazeShift = face.gaze * r * 0.22;
   const eyeY = hy - r * 0.10;
@@ -622,17 +664,13 @@ function drawFigure(ctx, sk, { ink, lineWidth, face, shadowColor, scale, drip, i
   if (Math.abs(brow) > 0.12 || face.smile < -0.35) {
     ctx.strokeStyle = faceInk;
     ctx.lineWidth = Math.max(1.6, r * 0.06);
-    for (const eyeX of [lEyeX, rEyeX]) {
+    for (const [eyeX, side] of [[lEyeX, -1], [rEyeX, 1]]) {
       const by = eyeY - r * 0.27;
-      ctx.beginPath(); ctx.moveTo(eyeX - r * 0.17, by + brow * r * 0.035);
-      ctx.quadraticCurveTo(eyeX, by - brow * r * 0.17, eyeX + r * 0.17, by + brow * r * 0.035);
+      const tilt = brow * side * r * 0.14;
+      ctx.beginPath(); ctx.moveTo(eyeX - r * 0.17, by - tilt);
+      ctx.quadraticCurveTo(eyeX, by - r * 0.045, eyeX + r * 0.17, by + tilt);
       ctx.stroke();
     }
-  }
-  if (face.smile > 0.45 || brow > 0.55) {
-    ctx.fillStyle = 'rgba(251,113,133,0.16)';
-    ctx.beginPath(); ctx.arc(hx - r * 0.53, hy + r * 0.19, r * 0.105, 0, TWO_PI);
-    ctx.arc(hx + r * 0.53, hy + r * 0.19, r * 0.105, 0, TWO_PI); ctx.fill();
   }
 
   // Mouth: a clean, high-contrast line or an animated open expression.
@@ -784,8 +822,8 @@ function drawEffectsAfter(ctx, effects, L, t, sketches) {
 function floatSymbol(action, emotion) {
   if (action === 'think' || emotion === 'confused') return '?';
   if (action === 'surprised' || emotion === 'surprised' || action === 'scared' || emotion === 'scared' || action === 'wake_up' || action === 'panic') return '!';
-  if (action === 'zombie_walk' || action === 'zombie_chase' || action === 'infect' || action === 'turn_zombie') return 'â£';
-  if (action === 'laugh' || action === 'celebrate') return 'â';
+  if (action === 'zombie_walk' || action === 'zombie_chase' || action === 'infect' || action === 'turn_zombie') return '☣';
+  if (action === 'laugh' || action === 'celebrate') return '★';
   return '';
 }
 
@@ -873,6 +911,9 @@ export function renderFrame(ctx, scene, t, opts) {
   ctx.translate(W / 2 + shakeX, H / 2 + shakeY);
   ctx.scale(zoom, zoom);
   ctx.translate(-W / 2, -H / 2);
+  // Props and actors must share the camera or sleepers drift off pillows.
+  // The first pass remains as overscan underpainting at shaken frame edges.
+  if (zoom !== 1 || shaken) drawBackground(ctx, scene.background, W, H, local);
 
   if (effects.includes('night')) drawTint(ctx, W, H, 'rgba(8,15,45,0.32)');
   if (effects.includes('day')) drawTint(ctx, W, H, 'rgba(255,230,160,0.08)');
@@ -892,13 +933,25 @@ export function renderFrame(ctx, scene, t, opts) {
 
   scene.characters.forEach((c, i) => {
     const meta = charMetaMap.get(c.id) || {};
-    const pose = solvePose(c.action, local, c.emotion);
+    const pose = solvePose(c.action, local, c.emotion, dur);
     const hasTarget = typeof c.targetX === 'number' && Number.isFinite(c.targetX);
     const curX = hasTarget ? c.position.x + (c.targetX - c.position.x) * progress : c.position.x;
-    const px = curX * W;
-    const groundY = (c.position.y || bgInfo.ground) * H;
-    const charScale = L.scale * (c.scale || 1) * (characterCount > 3 ? 0.92 : 1);
-    const facing = c.facing === -1 ? -1 : 1;
+    let px = curX * W;
+    let groundY = (c.position.y ?? bgInfo.ground) * H;
+    let charScale = L.scale * (c.scale || 1) * (characterCount > 3 ? 0.92 : 1);
+    let facing = c.facing === -1 ? -1 : 1;
+    const stage = scene.background === 'bedroom' ? bedroomStaging(c.action, progress, W, H, charScale) : null;
+    if (stage) {
+      px = stage.x; groundY = stage.groundY; charScale = stage.scale; facing = stage.facing;
+      pose.dist = 0;
+      pose.gaze = c.action === 'watch_tv' || c.action === 'look_window' ? 0.85 : pose.gaze;
+    }
+    // Ease travel toward safe frame limits, rather than hitting an invisible wall.
+    if (!hasTarget && pose.dist) {
+      const room = Math.max(charScale * 0.08, facing > 0 ? W * 0.85 - px : px - W * 0.15);
+      const limit = room / charScale;
+      pose.dist = limit * Math.tanh(pose.dist / limit);
+    }
 
     const sk = buildSkeleton(pose, {
       x: px,
@@ -907,10 +960,19 @@ export function renderFrame(ctx, scene, t, opts) {
       facing,
       disableDist: hasTarget,
     });
-    // Clamp horizontal position so walking/chasing characters stay inside the frame
-    const shiftX = Math.min(W * 0.93, Math.max(W * 0.07, sk.hip[0])) - sk.hip[0];
+    // Protect the full silhouette, including extended hands, hats and shoes.
+    const jointKeys = ['hip', 'chest', 'neck', 'shoulder', 'lShoulder', 'rShoulder', 'lHip', 'rHip', 'head', 'lElbow', 'lHand', 'rElbow', 'rHand', 'lKnee', 'lFoot', 'rKnee', 'rFoot'];
+    if (Number.isFinite(stage?.hipY)) {
+      const dy = stage.hipY - sk.hip[1];
+      for (const k of jointKeys) sk[k] = [sk[k][0], sk[k][1] + dy];
+      sk.headBox.y += dy;
+    }
+    const left = Math.min(...jointKeys.map(k => sk[k][0]), sk.head[0] - sk.headR * 1.45) - charScale * 0.045;
+    const right = Math.max(...jointKeys.map(k => sk[k][0]), sk.head[0] + sk.headR * 1.45) + charScale * 0.08;
+    const margin = W * (effects.includes('zoom') ? 0.055 : 0.025);
+    const shiftX = left < margin ? margin - left : right > W - margin ? W - margin - right : 0;
     if (Math.abs(shiftX) > 0.5) {
-      for (const k of ['hip', 'chest', 'neck', 'shoulder', 'lShoulder', 'rShoulder', 'lHip', 'rHip', 'head', 'lElbow', 'lHand', 'rElbow', 'rHand', 'lKnee', 'lFoot', 'rKnee', 'rFoot']) {
+      for (const k of jointKeys) {
         sk[k] = [sk[k][0] + shiftX, sk[k][1]];
       }
       sk.headBox.x += shiftX;
@@ -924,7 +986,7 @@ export function renderFrame(ctx, scene, t, opts) {
 
     drawFigure(ctx, sk, {
       ink: charInk,
-      lineWidth: Math.max(2.5, charScale * 0.032),
+      lineWidth: Math.max(1.6, charScale * 0.022),
       face: {
         smile: pose.smile,
         eye: pose.eye,
@@ -933,7 +995,7 @@ export function renderFrame(ctx, scene, t, opts) {
         gaze: pose.gaze,
         brow: pose.brow,
       },
-      shadowColor: dark ? 'rgba(0,0,0,0.38)' : 'rgba(0,0,0,0.16)',
+      shadowColor: stage?.inBed ? null : dark ? 'rgba(0,0,0,0.38)' : 'rgba(0,0,0,0.16)',
       scale: charScale,
       drip: c.drip || meta.drip,
       isZombie,

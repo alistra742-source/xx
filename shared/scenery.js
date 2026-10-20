@@ -20,6 +20,15 @@ export const BACKGROUND_INFO = {
   lab: { dark: true, ground: 0.82 },
 };
 
+/** Shared furniture anchors: actors and set dressing use the same geometry. */
+export function bedroomLayout(W, H) {
+  const ground = H * BACKGROUND_INFO.bedroom.ground;
+  const bed = { x: W * 0.04, w: Math.min(W * 0.65, H * 0.64), mattressY: ground - H * 0.17 };
+  const window = { x: W * 0.50, y: H * 0.16, w: W * 0.28, h: H * 0.34 };
+  const tv = { x: W * 0.74, y: H * 0.42, w: W * 0.22, h: Math.min(H * 0.16, W * 0.22 * 0.64) };
+  return { ground, bed, window, tv };
+}
+
 function rect(ctx, color, x, y, w, h) {
   ctx.fillStyle = color;
   ctx.fillRect(x, y, w, h);
@@ -87,6 +96,8 @@ export function drawBackground(ctx, name, W, H, t = 0) {
   const g = BACKGROUND_INFO[name] ? name : 'street';
   const groundY = H * BACKGROUND_INFO[g].ground;
   const rnd = seeded(g.length * 9973 + Math.round(W));
+  // Opaque underpainting avoids fractional wall/floor alpha seams in exports.
+  rect(ctx, BACKGROUND_INFO[g].dark ? '#101a28' : '#e7e5dc', 0, 0, W, H);
 
   switch (g) {
     case 'black': {
@@ -147,15 +158,16 @@ export function drawBackground(ctx, name, W, H, t = 0) {
       poly(ctx, '#312e81', [[wx + ww + 8, wy - 6], [wx + ww * 0.82, wy - 6], [wx + ww * 0.92, wy + wh + 4], [wx + ww + 8, wy + wh + 4]]);
 
       // Bed on left side
-      const bx = W * 0.04, bw = W * 0.36, bedTop = groundY - H * 0.16;
+      const bedroom = bedroomLayout(W, H);
+      const bx = bedroom.bed.x, bw = bedroom.bed.w, bedTop = bedroom.bed.mattressY + H * 0.01;
       roundRect(ctx, '#451a03', bx, bedTop - H * 0.09, W * 0.035, H * 0.25, 4); // headboard
       roundRect(ctx, '#5c2d16', bx, groundY - H * 0.07, bw, H * 0.07, 3); // frame
       roundRect(ctx, '#e2e8f0', bx + W * 0.03, bedTop - H * 0.01, bw - W * 0.03, H * 0.06, 6); // mattress
-      roundRect(ctx, '#f8fafc', bx + W * 0.04, bedTop - H * 0.045, W * 0.09, H * 0.04, 8); // pillow
-      roundRect(ctx, '#2563eb', bx + W * 0.11, bedTop - H * 0.008, bw - W * 0.11, H * 0.065, 6); // blanket
+      roundRect(ctx, '#f8fafc', bx + bw * 0.035, bedTop - H * 0.045, bw * 0.25, H * 0.04, 8); // pillow
+      roundRect(ctx, '#2563eb', bx + bw * 0.29, bedTop - H * 0.008, bw * 0.71, H * 0.065, 6); // blanket
 
       // TV Stand & Wide-screen TV on right side (Emergency Broadcast!)
-      const tx = W * 0.74, tw = W * 0.22, ty = groundY - H * 0.26, th = H * 0.14;
+      const { x: tx, w: tw, y: ty, h: th } = bedroom.tv;
       roundRect(ctx, '#1f2437', tx + tw * 0.08, groundY - H * 0.1, tw * 0.84, H * 0.1, 4); // cabinet
       rect(ctx, '#0f172a', tx + tw * 0.44, ty + th, tw * 0.12, H * 0.025); // stand neck
       roundRect(ctx, '#090d16', tx - 4, ty - 4, tw + 8, th + 8, 5); // bezel
@@ -204,7 +216,7 @@ export function drawBackground(ctx, name, W, H, t = 0) {
       // Dashed yellow road stripes
       ctx.fillStyle = '#eab308';
       for (let i = 0; i < 8; i++) {
-        const dx = ((i * W) / 6 - (t * 25) % (W / 6));
+        const dx = (i * W) / 6;
         ctx.fillRect(dx, groundY + (H - groundY) * 0.52, W * 0.08, 4);
       }
 
@@ -332,8 +344,9 @@ export function drawBackground(ctx, name, W, H, t = 0) {
       // Distant fire glow & rising smoke plumes
       for (let i = 0; i < 6; i++) {
         const sx = W * (0.1 + 0.16 * i);
-        const sy = H * 0.25 - ((t * 14 + i * 25) % 60);
-        circle(ctx, 'rgba(41,37,36,0.45)', sx, sy, Math.min(W, H) * 0.09);
+        const life = ((t * 0.16 + i / 6) % 1);
+        const sy = H * (0.58 - life * 0.48);
+        circle(ctx, `rgba(41,37,36,${0.45 * Math.sin(Math.PI * life)})`, sx + Math.sin(life * 4 + i) * W * 0.035, sy, Math.min(W, H) * (0.05 + life * 0.09));
       }
       // Ruined building silhouettes
       for (let i = 0; i < 6; i++) {
@@ -416,6 +429,114 @@ export function drawBackground(ctx, name, W, H, t = 0) {
     default:
       rect(ctx, '#0f172a', 0, 0, W, H);
   }
+  drawScenicFinish(ctx, g, W, H, groundY, t);
+}
+
+// Atmospheric perspective, motivated practical lights and restrained material
+// texture. Spatial randomness makes scrubbing and out-of-order export stable.
+function drawScenicFinish(ctx, name, W, H, ground, t) {
+  const rnd = seeded(52871 + name.length * 329);
+  const unit = Math.min(W, H);
+  const glow = (x, y, radius, color) => {
+    const light = ctx.createRadialGradient(x, y, 0, x, y, Math.max(1, radius));
+    light.addColorStop(0, color); light.addColorStop(1, 'rgba(0,0,0,0)');
+    rect(ctx, light, x - radius, y - radius, radius * 2, radius * 2);
+  };
+  ctx.save();
+  if (['street', 'city', 'rooftop'].includes(name)) {
+    const haze = vGrad(ctx, H * 0.32, ground, [[0, 'rgba(65,106,141,0)'], [0.72, 'rgba(90,132,164,0.14)'], [1, 'rgba(35,65,92,0)']]);
+    rect(ctx, haze, 0, H * 0.32, W, ground - H * 0.32);
+    if (name !== 'rooftop') {
+      const shopY = ground - H * 0.19;
+      for (let i = 0; i < 7; i++) {
+        const x = W * (i / 6 - 0.025), w = W * 0.137;
+        rect(ctx, '#172434', x, shopY, w, H * 0.172);
+        rect(ctx, '#465366', x - 2, shopY, w + 4, H * 0.008);
+        roundRect(ctx, i % 2 ? '#22566a' : '#684144', x + w * 0.06, shopY + H * 0.018, w * 0.88, H * 0.027, unit * 0.003);
+        for (let k = 0; k < 5; k++) rect(ctx, 'rgba(255,225,157,0.7)', x + w * (0.14 + k * 0.14), shopY + H * 0.027, w * 0.07, H * 0.005);
+        rect(ctx, '#0c1622', x + w * 0.08, shopY + H * 0.055, w * 0.84, H * 0.1);
+        const warm = ctx.createLinearGradient(x, 0, x + w, 0);
+        warm.addColorStop(0, '#976f4c'); warm.addColorStop(0.5, '#e7b875'); warm.addColorStop(1, '#7c6958');
+        rect(ctx, warm, x + w * 0.12, shopY + H * 0.061, w * 0.47, H * 0.081);
+        rect(ctx, '#344757', x + w * 0.35, shopY + H * 0.06, w * 0.025, H * 0.085);
+        rect(ctx, '#233b4b', x + w * 0.65, shopY + H * 0.061, w * 0.22, H * 0.09);
+        circle(ctx, '#d7ac6e', x + w * 0.8, shopY + H * 0.11, unit * 0.002);
+        glow(x + w * 0.35, ground + H * 0.07, unit * 0.14, 'rgba(238,164,80,0.17)');
+      }
+      for (let i = 0; i < 105; i++) {
+        const x = rnd() * W, y = ground + rnd() * (H - ground);
+        rect(ctx, i % 3 ? 'rgba(116,173,198,0.13)' : 'rgba(244,191,112,0.25)', x, y, unit * (0.008 + rnd() * 0.075), Math.max(0.6, unit * 0.002));
+      }
+      for (const x of [W * 0.18, W * 0.52, W * 0.86]) {
+        const y = ground - H * 0.32;
+        rect(ctx, '#28394c', x - unit * 0.005, y, unit * 0.01, H * 0.32);
+        rect(ctx, '#637688', x - unit * 0.002, y, unit * 0.002, H * 0.32);
+        roundRect(ctx, '#f6d89a', x - unit * 0.009, y - unit * 0.007, unit * 0.05, unit * 0.013, unit * 0.005);
+        glow(x + unit * 0.014, y, unit * 0.20, 'rgba(255,205,124,0.24)');
+        glow(x, ground, unit * 0.18, 'rgba(255,197,113,0.17)');
+      }
+    }
+    glow(W * 0.84, H * 0.13, unit * 0.32, 'rgba(123,178,213,0.13)');
+  }
+  if (['forest', 'horror', 'landscape', 'desert'].includes(name)) {
+    const forest = name === 'forest' || name === 'horror';
+    for (let layer = 0; layer < 3; layer++) {
+      ctx.fillStyle = forest ? ['rgba(52,101,83,0.18)', 'rgba(20,53,43,0.42)', '#102d25'][layer] : name === 'desert' ? ['#e7ac60', '#d7984d', '#c88c46'][layer] : ['#85b585', '#609b73', '#4e8d60'][layer];
+      ctx.beginPath(); ctx.moveTo(0, ground + H * 0.02);
+      for (let i = 0; i <= 14; i++) {
+        const x = W * i / 14;
+        const y = ground - H * (0.12 - layer * 0.045) + Math.sin(i * 0.65 + layer * 1.8) * H * 0.025;
+        ctx.lineTo(x, y);
+      }
+      ctx.lineTo(W, ground + H * 0.03); ctx.closePath(); ctx.fill();
+    }
+    if (forest) {
+      for (const side of [0.025, 0.975]) {
+        const x = W * side;
+        poly(ctx, '#10231e', [[x - unit * 0.03, ground], [x - unit * 0.011, H * 0.09], [x + unit * 0.018, H * 0.05], [x + unit * 0.043, ground]]);
+        ctx.strokeStyle = '#214239'; ctx.lineWidth = unit * 0.005;
+        ctx.beginPath(); ctx.moveTo(x, ground); ctx.bezierCurveTo(x + 9, H * 0.54, x - 8, H * 0.3, x + 2, H * 0.1); ctx.stroke();
+        for (let j = 0; j < 5; j++) {
+          const bx = x + (side < 0.5 ? 1 : -1) * unit * (0.03 + j * 0.025);
+          ctx.strokeStyle = '#142f26'; ctx.lineWidth = unit * (0.018 - j * 0.002);
+          ctx.beginPath(); ctx.moveTo(x, H * (0.17 + j * 0.045)); ctx.quadraticCurveTo(bx, H * 0.1, bx + unit * 0.03, H * 0.06); ctx.stroke();
+        }
+      }
+      glow(W * 0.73, H * 0.28, unit * 0.5, 'rgba(175,212,162,0.12)');
+    }
+    for (let i = 0; i < 75; i++) {
+      const x = rnd() * W, y = ground + rnd() * (H - ground);
+      ctx.strokeStyle = forest ? 'rgba(124,164,103,0.25)' : 'rgba(98,75,35,0.2)'; ctx.lineWidth = Math.max(0.7, unit * 0.002);
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + unit * 0.012, y - rnd() * unit * 0.012); ctx.stroke();
+    }
+  }
+  if (['bedroom', 'school', 'office', 'bunker', 'lab'].includes(name)) {
+    ctx.strokeStyle = 'rgba(120,146,163,0.12)'; ctx.lineWidth = Math.max(1, unit * 0.002);
+    for (let i = -5; i <= 5; i++) {
+      ctx.beginPath(); ctx.moveTo(W * 0.5 + i * W * 0.055, ground); ctx.lineTo(W * 0.5 + i * W * 0.2, H); ctx.stroke();
+    }
+    for (let i = 1; i < 4; i++) {
+      const y = ground + (H - ground) * (i / 4) ** 1.7;
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+    }
+    rect(ctx, 'rgba(184,198,202,0.22)', 0, ground - unit * 0.009, W, unit * 0.003);
+    if (name === 'bedroom') {
+      const x = W * 0.12, y = H * 0.48;
+      glow(x, y, unit * 0.33, 'rgba(255,173,84,0.19)');
+      rect(ctx, '#5b4238', x - unit * 0.005, y, unit * 0.01, H * 0.15);
+      poly(ctx, '#e2b67e', [[x - unit * 0.032, y - unit * 0.035], [x + unit * 0.032, y - unit * 0.035], [x + unit * 0.055, y + unit * 0.027], [x - unit * 0.055, y + unit * 0.027]]);
+      glow(W * 0.64, H * 0.35, unit * 0.37, 'rgba(97,149,228,0.12)');
+    } else {
+      for (const x of [W * 0.2, W * 0.8]) {
+        roundRect(ctx, '#d1e5e4', x - W * 0.07, H * 0.055, W * 0.14, unit * 0.01, unit * 0.004);
+        glow(x, H * 0.12, unit * 0.33, 'rgba(169,223,234,0.13)');
+      }
+    }
+  }
+  const vignette = ctx.createRadialGradient(W * 0.5, H * 0.47, unit * 0.15, W * 0.5, H * 0.47, Math.hypot(W, H) * 0.62);
+  vignette.addColorStop(0, 'rgba(7,15,27,0)'); vignette.addColorStop(0.6, 'rgba(7,15,27,0.03)'); vignette.addColorStop(1, 'rgba(7,15,27,0.43)');
+  rect(ctx, vignette, 0, 0, W, H);
+  ctx.restore();
 }
 
 /** Overlay tint for day/night/alarm effects. */

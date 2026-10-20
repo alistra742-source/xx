@@ -11,11 +11,11 @@ const TAU = Math.PI * 2;
 
 // Proportions in "figure heights" (total standing height ≈ 1.0).
 export const BODY = {
-  head: 0.088,
+  head: 0.12,
   neckLen: 0.032,
   torso: 0.29,
-  shoulderSpread: 0.035,
-  hipSpread: 0.022,
+  shoulderSpread: 0.09,
+  hipSpread: 0.06,
   upper: 0.155,
   fore: 0.145,
   thigh: 0.215,
@@ -195,7 +195,8 @@ const ACTION_FNS = {
     [0.25, pose({ torso: 178, lThigh: -10, rThigh: -10, lShin: -20, rShin: -20, lArm: JUMP_UP_L, rArm: JUMP_UP_R, lFore: 175, rFore: 185, lift: 0.15, smile: 0.8 })],
     [0.55, pose({ torso: 175, lThigh: 38, rThigh: 38, lShin: -45, rShin: -45, lArm: JUMP_UP_L, rArm: JUMP_UP_R, lFore: 175, rFore: 185, lift: 0.45, smile: 0.9 })],
     [0.95, pose({ torso: 192, lThigh: 55, rThigh: 55, lShin: -35, rShin: -35, lArm: -30, rArm: 30, lFore: -40, rFore: 40, lift: 0 })],
-  ], 1.4),
+    [1.25, pose({})],
+  ]),
 
   fall: (t) => keyframes(t, [
     [0, pose({})],
@@ -265,15 +266,15 @@ const ACTION_FNS = {
   }),
 
   fight: (t) => {
-    const cycle = t % 1.4;
+    const cycle = Math.min(t, 1.4);
     const half = cycle < 0.7;
-    const p = keyframes(cycle % 0.7, [
+    const p = keyframes(half ? cycle : cycle - 0.7, [
       [0, pose({ torso: 170, lArm: 135, lFore: 195, rArm: 120, rFore: 185, lThigh: -24, rThigh: 26, lShin: -12, rShin: 10, smile: -0.4, brow: -0.8 })],
       [0.18, pose({ torso: 158, lArm: 140, lFore: 195, rArm: 92, rFore: 90, lThigh: -28, rThigh: 32, lShin: -14, rShin: 14, smile: -0.7, brow: -1, headTilt: 8, dist: 0.05 })],
       [0.38, pose({ torso: 160, lArm: 140, lFore: 195, rArm: 92, rFore: 90, lThigh: -26, rThigh: 30, lShin: -12, rShin: 12, smile: -0.7, brow: -1, headTilt: 6, dist: 0.04 })],
       [0.7, pose({ torso: 170, lArm: 135, lFore: 195, rArm: 120, rFore: 185, lThigh: -24, rThigh: 26, lShin: -12, rShin: 10, smile: -0.4, brow: -0.8, dist: 0 })],
     ]);
-    return half ? p : mirror(p);
+    return half ? p : mix(p, mirror(p), smooth((cycle - 0.7) / 0.12));
   },
 
   dodge: (t) => keyframes(t, [
@@ -281,7 +282,7 @@ const ACTION_FNS = {
     [0.2, pose({ torso: 204, headTilt: -10, dist: -0.14, lThigh: 28, rThigh: -18, lShin: -22, rShin: -15, lArm: 150, lFore: 200, rArm: 145, rFore: 195, smile: -0.4, eye: 1.3 })],
     [0.55, pose({ torso: 202, headTilt: -8, dist: -0.14, lThigh: 28, rThigh: -18, lShin: -22, rShin: -15, lArm: 150, lFore: 200, rArm: 145, rFore: 195, smile: -0.4, eye: 1.25 })],
     [0.95, pose({ dist: 0, lArm: 140, lFore: 195, rArm: 130, rFore: 190 })],
-  ], 1.8),
+  ]),
 
   celebrate: (t) => pose({
     torso: 180 + 4 * Math.sin(TAU * 2 * t),
@@ -342,12 +343,12 @@ const ACTION_FNS = {
   // ---- Story & Cinematic Actions ----
 
   sleep: (t) => pose({
-    torso: 92 + 1.2 * Math.sin((TAU * t) / 2.6),
-    headTilt: 14 + 2 * Math.sin((TAU * t) / 2.6),
-    lThigh: 84, rThigh: 88,
-    lShin: 78, rShin: 82,
-    lArm: 105, lFore: 145,
-    rArm: 95, rFore: 135,
+    torso: 270 + 0.7 * Math.sin((TAU * t) / 2.6),
+    headTilt: 1 + Math.sin((TAU * t) / 2.6),
+    lThigh: 89, rThigh: 90,
+    lShin: 89, rShin: 90,
+    lArm: 100, lFore: 110,
+    rArm: 88, rFore: 96,
     eye: 0.08, // closed eyes
     smile: 0.15,
     mouth: 0.15 * Math.max(0, Math.sin((TAU * t) / 2.6)),
@@ -355,10 +356,11 @@ const ACTION_FNS = {
   }),
 
   wake_up: (t) => keyframes(t, [
-    [0, pose({ torso: 92, headTilt: 14, lThigh: 84, rThigh: 88, lShin: 78, rShin: 82, lArm: 105, lFore: 145, rArm: 95, rFore: 135, eye: 0.1, smile: 0 })],
-    [0.45, pose({ torso: 94, headTilt: 10, lThigh: 84, rThigh: 88, lShin: 78, rShin: 82, lArm: 110, lFore: 150, rArm: 100, rFore: 140, eye: 0.4, smile: -0.2 })],
-    [0.85, pose({ torso: 174, headTilt: -10, lThigh: 78, rThigh: 72, lShin: 12, rShin: 8, lArm: 155, lFore: 205, rArm: 195, rFore: 155, eye: 1.6, mouth: 0.9, smile: -0.6, brow: 1.0, lift: 0.03, prop: 'alert' })],
-    [1.4, pose({ torso: 178, headTilt: 8, gaze: -0.8, lThigh: -10, rThigh: 12, lShin: -6, rShin: 6, lArm: 145, lFore: 195, rArm: 165, rFore: 185, eye: 1.5, mouth: 0.6, smile: -0.5, brow: 0.9, prop: 'alert' })],
+    [0, pose({ torso: 270, lThigh: 89, rThigh: 90, lShin: 89, rShin: 90, lArm: 100, lFore: 110, rArm: 88, rFore: 96, eye: 0.08, smile: 0 })],
+    [0.25, pose({ torso: 266, headTilt: -4, lThigh: 89, rThigh: 90, lShin: 89, rShin: 90, lArm: 100, lFore: 110, rArm: 88, rFore: 96, eye: 0.5, smile: -0.2 })],
+    [0.85, pose({ torso: 184, headTilt: -6, lThigh: 88, rThigh: 84, lShin: 10, rShin: 6, lArm: 35, lFore: 88, rArm: 130, rFore: 190, eye: 1.5, mouth: 0.8, smile: -0.6, brow: 1.0, prop: 'alert' })],
+    [1.25, pose({ torso: 174, headTilt: -5, lThigh: 82, rThigh: 78, lShin: 8, rShin: 4, lArm: 28, lFore: 85, rArm: 120, rFore: 185, eye: 1.5, mouth: 0.6, smile: -0.5, brow: 0.9 })],
+    [1.8, pose({ torso: 178, headTilt: 8, gaze: -0.8, lThigh: -10, rThigh: 12, lShin: -6, rShin: 6, lArm: 145, lFore: 195, rArm: 165, rFore: 185, eye: 1.5, mouth: 0.6, smile: -0.5, brow: 0.9, prop: 'alert' })],
     [2.1, pose({ torso: 176, headTilt: -6, gaze: 0.9, lThigh: -12, rThigh: 14, lShin: -6, rShin: 6, lArm: 135, lFore: 190, rArm: 150, rFore: 195, eye: 1.45, mouth: 0.5, smile: -0.6, brow: 0.9 })],
   ]),
 
@@ -502,7 +504,7 @@ const ACTION_FNS = {
   },
 
   infect: (t) => {
-    const u = t % 2.2;
+    const u = t;
     return keyframes(u, [
       [0, pose({ torso: 150, spineCurve: 14, headTilt: 18, lArm: 88, lFore: 96, rArm: 94, rFore: 88, lThigh: -18, rThigh: 24, eye: 1.4, mouth: 0.8, smile: -0.8, brow: -1, infection: 1 })],
       [0.35, pose({ torso: 132, spineCurve: 18, headTilt: 28, lArm: 72, lFore: 115, rArm: 78, rFore: 110, lThigh: -28, rThigh: 38, lShin: -18, rShin: 16, dist: 0.14, eye: 1.6, mouth: 1.0, smile: -0.9, brow: -1, infection: 1 })],
@@ -553,18 +555,24 @@ const EMOTION_FACE = {
  * with the scene emotion applied to the face.
  * Unknown actions fall back to idle.
  */
-export function solvePose(action, t, emotion = 'neutral') {
+export function solvePose(action, t, emotion = 'neutral', sceneDuration = 0) {
   const fn = ACTION_FNS[action] ?? ACTION_FNS.idle;
   const time = Math.max(0, Number.isFinite(t) ? t : 0);
-  let p = fn(time);
+  // One-shot story actions progress through the scene rather than restarting
+  // a short GIF. Gaits stay cyclic while their travel remains continuous.
+  const storyEnd = { jump: 1.25, dodge: 0.95, fight: 1.4, fall: 1.2, defeated: 1, wake_up: 2.1, infect: 2.2, turn_zombie: 3 }[action];
+  const actionTime = storyEnd && sceneDuration > storyEnd ? time * storyEnd / sceneDuration : time;
+  let p = fn(actionTime);
   const noStandBlend = action === 'sleep' || action === 'wake_up' || action === 'crawl';
   const blend = noStandBlend ? 1 : clamp01(time / 0.22);
   if (blend < 1) p = mix(ACTION_FNS.stand(0), p, smooth(blend));
   const e = EMOTION_FACE[emotion] ?? EMOTION_FACE.neutral;
+  const blinkPhase = ((time + 1.17) % 4.73);
+  const blink = blinkPhase < 0.15 ? 1 - Math.sin(Math.PI * blinkPhase / 0.15) * 0.96 : 1;
   return {
     ...p,
     smile: p.smile + e.smile,
-    eye: p.eye * e.eye,
+    eye: p.eye * e.eye * blink,
     headTilt: p.headTilt + e.headTilt,
     brow: clamp01(Math.abs(p.brow)) > 0.1 ? p.brow : e.brow,
     infection: emotion === 'infected' ? Math.max(p.infection, 1) : p.infection,
