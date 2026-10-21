@@ -3,6 +3,7 @@ import Player from './Player.jsx';
 import { recordWebm, webmSupported } from './webm.js';
 import { totalSeconds } from './render.js';
 import { HATS, TOPS, ACCESSORIES } from '../shared/constants.js';
+import { MISSING_API_MESSAGE, configProblem } from '../shared/client-config.js';
 
 async function api(path, options = {}) {
   const res = await fetch(path, {
@@ -10,12 +11,16 @@ async function api(path, options = {}) {
     headers: options.body ? { 'content-type': 'application/json' } : undefined,
     body: options.body ? JSON.stringify(options.body) : undefined,
   });
-  const data = await res.json().catch(() => ({}));
+  // A static host answers unknown routes with index.html, so a JSON parse of an
+  // HTML body must not be treated as a successful empty response.
+  const isJson = (res.headers.get('content-type') || '').includes('application/json');
+  const data = isJson ? await res.json().catch(() => null) : null;
   if (!res.ok) {
-    const err = new Error(data.error || `Request failed (${res.status})`);
-    err.field = data.field;
+    const err = new Error(data?.error || `Request failed (${res.status})`);
+    err.field = data?.field;
     throw err;
   }
+  if (!data) throw new Error(MISSING_API_MESSAGE);
   return data;
 }
 
@@ -46,6 +51,8 @@ export default function App() {
 
   useEffect(() => {
     api('/api/config').then((c) => {
+      const problem = configProblem(c);
+      if (problem) { setConfig(null); setError(problem); return; }
       setConfig(c);
       setExportOpts({ resolution: c.defaultResolution, fps: c.defaultFps });
     }).catch((e) => setError(`Could not reach the server: ${e.message}`));
@@ -193,7 +200,9 @@ export default function App() {
   }
 
   const exporting = job && !TERMINAL.includes(job.status);
-  const serverCanMp4 = config?.ffmpeg;
+  const serverCanMp4 = Boolean(config?.ffmpeg);
+  const llm = config?.llm ?? {};
+  const narration = config?.narration ?? {};
 
   return (
     <div className="app">
@@ -204,10 +213,10 @@ export default function App() {
         </div>
         {config && (
           <div className="badges">
-            <span className={`badge ${config.llm.authenticated === true ? 'ok' : 'warn'}`}>{config.llm.authenticated === true ? 'Story AI connected' : config.llm.lastError ? 'Story AI · check connection' : config.llm.enabled ? 'Story AI configured · unverified' : 'Story AI not configured'}</span>
+            <span className={`badge ${llm.authenticated === true ? 'ok' : 'warn'}`}>{llm.authenticated === true ? 'Story AI connected' : llm.lastError ? 'Story AI · check connection' : llm.enabled ? 'Story AI configured · unverified' : 'Story AI not configured'}</span>
             <span className={`badge ${serverCanMp4 ? 'ok' : 'warn'}`}>{serverCanMp4 ? 'MP4 export' : 'WebM export only'}</span>
-            <span className={`badge ${config.narration.available ? 'ok' : ''}`}>
-              {config.narration.available ? `Voice: ${config.narration.provider}${config.narration.authenticated === true ? ' · connected' : config.narration.lastError ? ' · check connection' : ' · unverified'}` : 'Natural voice not configured'}
+            <span className={`badge ${narration.available ? 'ok' : ''}`}>
+              {narration.available ? `Voice: ${narration.provider}${narration.authenticated === true ? ' · connected' : narration.lastError ? ' · check connection' : ' · unverified'}` : 'Natural voice not configured'}
             </span>
             <button className="btn small" type="button" onClick={checkConnections} disabled={checkingConnections}>{checkingConnections ? 'Checking…' : 'Check connections'}</button>
             {config.deployment?.revision && <span className="muted small">Build {config.deployment.revision}</span>}
