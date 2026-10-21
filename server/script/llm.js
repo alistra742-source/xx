@@ -1,7 +1,9 @@
-import { randomUUID } from 'node:crypto';
 import { ACTIONS, BACKGROUNDS, EFFECTS, EMOTIONS, TONES, HATS, TOPS, ACCESSORIES, LIMITS } from '../../shared/constants.js';
 import { parseJsonLoose, normalizeProject, sceneCountFor } from '../../shared/schema.js';
-import { cleanEnv } from '../config.js';
+import { cleanEnv } from '../../shared/provider-config.js';
+
+// Works in Node and in workerd alike.
+const randomUUID = () => globalThis.crypto.randomUUID();
 
 export class ScriptError extends Error {
   constructor(message, code, status = 502, retryable = false, retryAfterMs = 0) {

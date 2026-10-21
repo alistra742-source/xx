@@ -12,3 +12,6 @@ stick-videos/
 work-*/
 *.log
 .DS_Store
+/freebuff-sites-build/
+.sites/
+sites-build/

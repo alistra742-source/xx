@@ -13,6 +13,7 @@
     "start": "node server/index.js",
     "test": "node --test --test-concurrency=1 tests/*.test.js",
     "check": "node --check server/index.js && npm test",
+    "build:sites": "node scripts/build-sites.mjs",
     "e2e:export": "node scripts/e2e-export.mjs"
   },
   "dependencies": {

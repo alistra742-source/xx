@@ -41,6 +41,17 @@ The app does not automatically load `.env`. For local file-based variables, copy
 
 `npm run dev` starts the API and Vite development server. `npm test` runs mocked provider, schema, artwork, cache, timing, HTTP API, and real FFmpeg tests without requiring paid credentials. `npm run e2e:export` exercises a running server and can consume provider quota.
 
+## Freebuff Sites (Workers) preview
+
+`npm run build:sites` writes `sites-build/`: a bundled Cloudflare Worker, the built studio assets and the deploy manifest. Cloudflare Workers cannot run FFmpeg, native canvas or a writable filesystem, so this build serves the API routes that only need `fetch()`:
+
+- Working: storyboards (`/api/script`), prompt planning, `/api/config`, diagnostics, and ElevenLabs narration over the `LLAMA_URL` / `ELEVENLABS_API` site variables.
+- Not available: MP4 export. The API answers `501 MP4_UNSUPPORTED` and the studio's **Export WebM** button records the video in the browser instead.
+- The Node server (`npm start`) remains the full deployment, including MP4.
+- Preview deployments are public and have no sign-in, so anyone with the URL can spend configured provider quota.
+
+Deploy only the contents of `sites-build/`. Test it locally with `npx wrangler dev --config sites-build/wrangler.jsonc` before publishing.
+
 ## Environment variables
 
 | Variable | Default / purpose |
