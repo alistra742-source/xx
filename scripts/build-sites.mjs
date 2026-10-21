@@ -16,6 +16,11 @@ function run(args) {
   if (result.status !== 0) throw new Error(`vite ${args.join(' ')} failed with exit code ${result.status}`);
 }
 
+// Stamp the build into the Worker so /api/config reports which code is live.
+const gitSha = spawnSync('git', ['rev-parse', '--short=12', 'HEAD'], { cwd: root, encoding: 'utf8' }).stdout?.trim();
+process.env.VITE_BUILD_ID = gitSha || `local-${Date.now().toString(36)}`;
+console.log(`Build id: ${process.env.VITE_BUILD_ID}`);
+
 // A Worker that imports workerd-unavailable modules would fail only at runtime,
 // so fail the build instead.
 const worker = await readFile(join(root, 'worker', 'index.js'), 'utf8');

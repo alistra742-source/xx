@@ -15,7 +15,10 @@ import { createLlm } from '../server/script/llm.js';
 import { createScriptService } from '../server/script/index.js';
 import { createVoice } from './elevenlabs.js';
 
-const STARTED_AT = new Date().toISOString();
+// workerd freezes Date at 0 while modules initialize, so the start time has to
+// be captured on the first request instead of at module scope.
+let startedAtMs = 0;
+function startedAt() { if (!startedAtMs) startedAtMs = Date.now(); return startedAtMs; }
 const MAX_BODY = 1024 * 1024;
 const MP4_UNAVAILABLE = 'MP4 export needs FFmpeg, which Freebuff Sites cannot run. Use Export WebM in the studio instead.';
 
@@ -43,11 +46,13 @@ function sameOrigin(request, url) {
   try { return new URL(origin).host === url.host; } catch { return false; }
 }
 
+const BUILD_ID = import.meta.env?.VITE_BUILD_ID || 'dev';
+
 function deployment(env) {
   return {
-    revision: String(env.CF_VERSION_METADATA?.id || env.SOURCE_VERSION || 'sites').slice(0, 12),
+    revision: String(env.CF_VERSION_METADATA?.id || env.SOURCE_VERSION || BUILD_ID).slice(0, 12),
     generationMode: 'ai-only',
-    startedAt: STARTED_AT,
+    startedAt: new Date(startedAt()).toISOString(),
     runtime: 'workers',
   };
 }
@@ -64,7 +69,7 @@ async function handleApi(request, env, url) {
 
   if ((method === 'GET' || method === 'HEAD') && url.pathname === '/api/health') {
     return json({
-      ok: true, uptime: Math.round((Date.now() - Date.parse(STARTED_AT)) / 1000), rssMB: null,
+      ok: true, uptime: Math.max(0, Math.round((Date.now() - startedAt()) / 1000)), rssMB: null,
       ffmpeg: false, narration: narration(), llm: llm.status(), exports: 0, deployment: deployment(env),
     });
   }
@@ -142,6 +147,13 @@ export default {
       }
     }
     if (!env.ASSETS) return new Response('Not found.', { status: 404, headers: { 'content-type': 'text/plain; charset=utf-8' } });
-    return env.ASSETS.fetch(request);
+    const response = await env.ASSETS.fetch(request);
+    // The SPA fallback answers a missing file with index.html. Returning that for
+    // /assets/* hands HTML to a browser expecting JS or CSS, which blanks the page
+    // for anyone still holding a stale asset hash — so miss assets with a 404.
+    if (url.pathname.startsWith('/assets/') && (response.headers.get('content-type') || '').includes('text/html')) {
+      return new Response('Not found.', { status: 404, headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' } });
+    }
+    return response;
   },
 };

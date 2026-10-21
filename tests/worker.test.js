@@ -96,6 +96,23 @@ test('worker rejects MP4 export explicitly and keeps narration failures actionab
   assert.equal(diagnostics.narration.authenticated, null);
 });
 
+test('worker 404s a missing asset instead of serving the SPA shell as JS', async () => {
+  // A browser holding a stale bundle hash must not receive index.html for a
+  // module request: HTML parsed as JS leaves the page blank.
+  const stale = await call('/assets/index-STALEHASH.js', {}, env());
+  assert.equal(stale.status, 404);
+  assert.match(stale.headers.get('content-type'), /text\/plain/);
+  assert.match(await stale.text(), /Not found/);
+
+  const staleCss = await call('/assets/index-STALEHASH.css', {}, env());
+  assert.equal(staleCss.status, 404);
+
+  // Client-side routes still fall back to the shell.
+  const deep = await call('/some/deep/route', {}, env());
+  assert.equal(deep.status, 200);
+  assert.match(await deep.text(), /studio/);
+});
+
 test('worker guards mutations, JSON bodies and unknown routes', async () => {
   const foreign = await post('/api/script', { topic: 'A long enough premise for a story', duration: 30 }, env(), { origin: 'https://evil.test' });
   assert.equal(foreign.status, 403);
