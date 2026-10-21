@@ -292,12 +292,14 @@ test('LLM script request sends the key, model, and a per-request variation id', 
   }
 });
 
-test('GROQ_API alone selects Groq and the fastest small model', () => {
-  const config = loadConfig({ GROQ_API: 'gsk-test' });
-  assert.equal(config.llamaUrl, 'https://api.groq.com/openai/v1');
-  assert.equal(config.llmApiKey, 'gsk-test');
-  assert.equal(config.llmModel, 'openai/gpt-oss-20b');
-  const explicit = loadConfig({ GROQ_API: 'gsk-test', LLM_BASE_URL: 'https://example.test/v1', LLM_API_KEY: 'k' });
+test('hosted provider keys are ignored; only an explicit local model server configures the LLM', () => {
+  const ignored = loadConfig({ GROQ_API: 'gsk-test', GROQ_API_KEY: 'gsk-test' });
+  assert.equal(ignored.llamaUrl, '');
+  assert.equal(ignored.llmApiKey, '');
+  const local = loadConfig({ LLAMA_URL: 'http://127.0.0.1:8080/v1', LLM_MODEL: 'qwen2.5-0.5b-instruct' });
+  assert.equal(local.llamaUrl, 'http://127.0.0.1:8080/v1');
+  assert.equal(local.llmModel, 'qwen2.5-0.5b-instruct');
+  const explicit = loadConfig({ LLM_BASE_URL: 'https://example.test/v1', LLM_API_KEY: 'k' });
   assert.equal(explicit.llamaUrl, 'https://example.test/v1');
   assert.equal(explicit.llmApiKey, 'k');
 });

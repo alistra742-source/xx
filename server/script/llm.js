@@ -37,19 +37,18 @@ export function createLlm(config) {
   let lastError = null;
   let authenticated = null;
   const key = cleanEnv(config.llmApiKey);
-  const model = cleanEnv(config.llmModel) || 'llama-3.1-8b-instant';
+  const model = cleanEnv(config.llmModel);
   const configured = Boolean(cleanEnv(config.llamaUrl));
-  const provider = /groq\.com/i.test(config.llamaUrl || '') ? 'groq' : 'openai-compatible';
+  const provider = 'local';
   let endpoint = '';
   let configError;
   try { if (configured) endpoint = completionEndpoint(config.llamaUrl); } catch (error) { configError = error; }
-  const enabled = () => config.llmEnabled !== false && configured && !configError && (provider !== 'groq' || Boolean(key));
+  const enabled = () => config.llmEnabled !== false && configured && !configError;
 
   function ready(checkCooldown = true) {
     if (config.llmEnabled === false) throw new ScriptError('Language model is disabled. Enable LLM_ENABLED to create AI stories.', 'LLM_DISABLED', 503);
     if (configError) throw configError;
-    if (!configured) throw new ScriptError('Configure GROQ_API_KEY (or GROQ_API), or LLM_BASE_URL / LLAMA_URL for your model provider.', 'LLM_NOT_CONFIGURED', 503);
-    if (provider === 'groq' && !key) throw new ScriptError('Groq is selected but no API key is configured. Set GROQ_API_KEY, GROQ_API, or LLM_API_KEY.', 'LLM_MISSING_KEY', 503);
+    if (!configured) throw new ScriptError('No local model server is configured. Start llama-server (or any OpenAI-compatible server) and set LLAMA_URL, for example http://127.0.0.1:8080/v1.', 'LLM_NOT_CONFIGURED', 503);
     if (checkCooldown && Date.now() < cooldownUntil) throw new ScriptError('The model provider is temporarily cooling down. Try again after the indicated delay.', 'LLM_COOLDOWN', 503, true, cooldownUntil - Date.now());
   }
 
@@ -77,7 +76,7 @@ export function createLlm(config) {
       if (key) headers.authorization = `Bearer ${key}`;
       const response = await fetch(diagnostic ? endpoint.replace(/\/chat\/completions$/, '/models') : endpoint, {
         method: diagnostic ? 'GET' : 'POST', headers, signal: controller.signal,
-        ...(!diagnostic ? { body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature: 1.0, top_p: 0.95, stream: false, ...(json ? { response_format: { type: 'json_object' } } : {}) }) } : {}),
+        ...(!diagnostic ? { body: JSON.stringify({ ...(model ? { model } : {}), messages, max_tokens: maxTokens, temperature: 1.0, top_p: 0.95, stream: false, ...(json ? { response_format: { type: 'json_object' } } : {}) }) } : {}),
       });
       if (!response.ok) throw httpError(response);
       authenticated = key ? true : null;
@@ -193,7 +192,7 @@ export function createLlm(config) {
     try {
       ready(false);
       const body = await request(null, { diagnostic: true });
-      if (Array.isArray(body?.data) && !body.data.some((item) => item?.id === model)) throw new ScriptError('Connected, but the configured LLM_MODEL is not available to this account. Choose a model listed by the provider.', 'LLM_MODEL_NOT_FOUND', 502);
+      if (model && Array.isArray(body?.data) && !body.data.some((item) => item?.id === model)) throw new ScriptError('Connected, but the configured LLM_MODEL is not served by this endpoint. Clear LLM_MODEL or choose a model the server lists.', 'LLM_MODEL_NOT_FOUND', 502);
       lastError = null; cooldownUntil = 0;
     } catch (error) { record(error); }
     return status();

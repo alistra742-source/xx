@@ -9,7 +9,6 @@ const bounded = (v, d, lo, hi) => Math.max(lo, Math.min(hi, num(v, d)));
 
 export function loadConfig(env = process.env) {
   env = Object.fromEntries(Object.entries(env).map(([key, value]) => [key, cleanEnv(value)]));
-  const groqKey = env.GROQ_API_KEY || env.GROQ_API;
   return {
     port: num(env.PORT, 3000),
     host: env.HOST || '0.0.0.0',
@@ -18,14 +17,15 @@ export function loadConfig(env = process.env) {
     jobTtlMs: num(env.JOB_TTL_MINUTES, 30) * 60 * 1000,
     maxQueue: num(env.MAX_EXPORT_QUEUE, 3),
     staticDir: resolve(env.STATIC_DIR || 'dist'),
-    // LLM writes every story from the user's prompt. Any OpenAI-compatible
-    // /v1/chat/completions endpoint works: a hosted API (Groq, OpenRouter, ...)
-    // via LLM_BASE_URL + LLM_API_KEY, or a self-hosted llama-server via LLAMA_URL.
+    // LLM writes every story from the user's prompt. The app talks to a local
+    // OpenAI-compatible server (llama.cpp llama-server, Ollama, LM Studio): set
+    // LLAMA_URL (or LLM_BASE_URL) to its /v1 base. No hosted provider keys.
     llmEnabled: env.LLM_ENABLED !== 'false',
-    // GROQ_API alone is enough: it selects Groq's OpenAI-compatible endpoint.
-    llamaUrl: env.LLM_BASE_URL || env.LLAMA_URL || (groqKey ? 'https://api.groq.com/openai/v1' : ''),
-    llmApiKey: env.LLM_API_KEY || groqKey || '',
-    llmModel: env.LLM_MODEL || 'openai/gpt-oss-20b',
+    llamaUrl: env.LLM_BASE_URL || env.LLAMA_URL || '',
+    llmApiKey: env.LLM_API_KEY || '',
+    // Empty means "use whatever model the local server serves"; set LLM_MODEL
+    // only when that server exposes more than one model.
+    llmModel: env.LLM_MODEL || '',
     llmTimeoutMs: num(env.LLM_TIMEOUT_MS, 45000),
     llmCooldownMs: num(env.LLM_COOLDOWN_MS, 120000),
     llmMaxTokens: bounded(env.LLM_MAX_TOKENS, 6000, 1024, 8192),

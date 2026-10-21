@@ -22,7 +22,7 @@ test('HTTP API reports missing providers honestly and never substitutes stock st
       const data = await res.json();
       assert.equal(data.project, undefined);
       assert.ok(data.error.length > 10);
-      assert.match(data.error, /GROQ|LLM|model|AI/i);
+      assert.match(data.error, /LLM|LLAMA|model|local|AI/i);
     }
     const voice = await post('/api/voice', { text: 'The music carries across the river.' });
     assert.equal(voice.status, 503);

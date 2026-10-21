@@ -5,13 +5,13 @@ Turn your own idea into an AI-written storyboard, illustrated animation, natural
 ## Railway setup
 
 1. Deploy this repository using the included Dockerfile and `railway.json`.
-2. Add `GROQ_API` **or** `GROQ_API_KEY` to the variables of the **running web service**. A Groq key selects the correct endpoint automatically. For another compatible provider, use `LLM_BASE_URL`, `LLM_API_KEY`, and `LLM_MODEL`.
+2. Point the app at a **local** OpenAI-compatible model server by setting `LLAMA_URL` (for example `http://llama.railway.internal:8080/v1` for a llama.cpp companion service) or `LLM_BASE_URL`. There is **no hosted LLM provider key** — Groq and other hosted APIs are not used.
 3. Add `ELEVENLABS_API` **or** `ELEVENLABS_API_KEY` for neural male narration. The default voice is Adam; optionally change `ELEVENLABS_VOICE_ID`.
 4. Deploy/restart after changing variables. Open **Check connections** and check the displayed build revision to ensure you are seeing the new deployment.
 
-Keys stay server-side. A key being present is not proof it works: configuration and authentication status are reported separately. Story checks use the provider's models endpoint; narration is only marked authenticated after successful synthesis, avoiding a paid test request or a false rejection of speech-only keys.
+Model and voice keys stay server-side. A server being configured is not proof it works: configuration and reachability are reported separately. Story checks call the model server's `/models` endpoint; narration is only marked authenticated after successful synthesis, avoiding a paid test request or a false rejection of speech-only keys.
 
-Missing or rejected AI credentials produce an actionable error. **There is no automatic template-story fallback, eSpeak fallback, or Google voice fallback.** If a provider rejects a key or runs out of quota, the app does not quietly substitute a different story or narrator. Legacy template utilities remain for compatibility/tests but are not connected to production generation.
+A missing or unreachable model server produces an actionable error. **There is no automatic template-story fallback, eSpeak fallback, or Google voice fallback.** The app never quietly substitutes a different story or narrator. Legacy template utilities remain for compatibility/tests but are not connected to production generation.
 
 ## Studio workflow
 
@@ -27,12 +27,17 @@ Requires Node.js 20.19+ (Node 22 recommended), and FFmpeg for MP4 export. Docker
 
 ```bash
 npm ci
-# Export your provider credentials in your shell, or use Node's --env-file option.
+# Local model server (one time: ./scripts/download-model.sh)
+llama-server -m models/qwen2.5-0.5b-instruct-q4_k_m.gguf --port 8080 -c 4096 --parallel 1
+# then, in another shell
+export LLAMA_URL=http://127.0.0.1:8080/v1
 npm run build
 npm start
 ```
 
-The app does not automatically load `.env`. For local file-based variables, copy `.env.example` to `.env`, add your keys, and run `node --env-file=.env server/index.js`. Never commit `.env`.
+Any OpenAI-compatible local server works. With Ollama, `ollama pull qwen2.5:3b` and set `LLAMA_URL=http://127.0.0.1:11434/v1` (and `LLM_MODEL=qwen2.5:3b`, because Ollama serves several models). Larger models write more consistent storyboards; the 0.5B helper model is the minimum for a small container.
+
+The app does not automatically load `.env`. For local file-based variables, copy `.env.example` to `.env`, set `LLAMA_URL`, and run `node --env-file=.env server/index.js`. Never commit `.env`.
 
 `npm run dev` starts the API and Vite development server. `npm test` runs mocked provider, schema, artwork, cache, timing, HTTP API, and real FFmpeg tests without requiring paid credentials. `npm run e2e:export` exercises a running server and can consume provider quota.
 
@@ -41,10 +46,10 @@ The app does not automatically load `.env`. For local file-based variables, copy
 | Variable | Default / purpose |
 | --- | --- |
 | `PORT`, `HOST` | `3000`, `0.0.0.0`; Railway supplies PORT |
-| `GROQ_API`, `GROQ_API_KEY` | Groq credential aliases; either selects Groq automatically |
-| `LLM_BASE_URL`, `LLM_API_KEY` | Explicit OpenAI-compatible provider override |
-| `LLAMA_URL` | Optional self-hosted compatible endpoint when LLM_BASE_URL is empty |
-| `LLM_MODEL` | `openai/gpt-oss-20b` |
+| `LLAMA_URL` | Base URL of your local OpenAI-compatible model server, e.g. `http://127.0.0.1:8080/v1` |
+| `LLM_BASE_URL` | Agent-style override that wins over `LLAMA_URL` when both are set |
+| `LLM_API_KEY` | Optional bearer token for a local server that requires one |
+| `LLM_MODEL` | Empty by default: use whatever model the server serves. Set it only when the server exposes several models |
 | `LLM_ENABLED` | `true`; false disables generation rather than enabling stock plots |
 | `LLM_TIMEOUT_MS`, `LLM_COOLDOWN_MS`, `LLM_MAX_TOKENS` | Request deadline, transient-error cooldown, storyboard output budget |
 | `ELEVENLABS_API`, `ELEVENLABS_API_KEY` | Neural speech credential aliases |

@@ -43,12 +43,15 @@ test('endpoint canonicalization handles cloud and local base/full URLs without d
 });
 
 test('configuration aliases, quotes and bounded voice settings preserve explicit providers', () => {
-  const c = loadConfig({ GROQ_API_KEY: ' " gsk-safe " ', ELEVENLABS_API_KEY: " 'voice-key' ", ELEVENLABS_STABILITY: ' "0.6" ', ELEVENLABS_SPEED: '4', ELEVENLABS_USE_SPEAKER_BOOST: ' "false" ' });
-  assert.equal(c.llmApiKey, 'gsk-safe'); assert.equal(c.elevenLabsApiKey, 'voice-key');
-  assert.equal(c.llamaUrl, 'https://api.groq.com/openai/v1');
+  const c = loadConfig({ LLAMA_URL: ' " http://127.0.0.1:8080/v1 " ', LLM_API_KEY: ' " local-key " ', ELEVENLABS_API_KEY: " 'voice-key' ", ELEVENLABS_STABILITY: ' "0.6" ', ELEVENLABS_SPEED: '4', ELEVENLABS_USE_SPEAKER_BOOST: ' "false" ' });
+  assert.equal(c.llmApiKey, 'local-key'); assert.equal(c.elevenLabsApiKey, 'voice-key');
+  assert.equal(c.llamaUrl, 'http://127.0.0.1:8080/v1');
+  assert.equal(c.llmModel, '');
   assert.equal(c.elevenLabsStability, 0.6); assert.equal(c.elevenLabsSpeed, 1.2); assert.equal(c.elevenLabsUseSpeakerBoost, false);
   assert.equal(c.llmMaxTokens, 6000);
-  assert.equal(loadConfig({ GROQ_API: 'old', GROQ_API_KEY: 'new', LLM_BASE_URL: 'https://custom.test/v1', LLM_API_KEY: 'explicit' }).llmApiKey, 'explicit');
+  assert.equal(loadConfig({ LLM_BASE_URL: 'http://custom.test/v1', LLAMA_URL: 'http://fallback.test/v1', LLM_API_KEY: 'explicit' }).llamaUrl, 'http://custom.test/v1');
+  assert.equal(loadConfig({ GROQ_API: 'old', GROQ_API_KEY: 'new' }).llamaUrl, '');
+  assert.equal(loadConfig({ GROQ_API_KEY: 'new' }).llmApiKey, '');
   assert.equal(loadConfig({ ELEVENLABS_API: 'old' }).elevenLabsApiKey, 'old');
 });
 
@@ -139,7 +142,7 @@ test('instruction echo is rejected but an ordinary premise sentence is permitted
 
 test('missing configuration and disabled model never invoke fetch or fallback templates', async () => {
   await mockFetch(() => { throw new Error('Must not call'); }, async () => {
-    for (const [c, code] of [[loadConfig({}), 'LLM_NOT_CONFIGURED'], [config({ llmEnabled: false }), 'LLM_DISABLED'], [config({ llamaUrl: 'https://api.groq.com/openai/v1', llmApiKey: '' }), 'LLM_MISSING_KEY']]) {
+    for (const [c, code] of [[loadConfig({}), 'LLM_NOT_CONFIGURED'], [config({ llmEnabled: false }), 'LLM_DISABLED'], [config({ llamaUrl: 'not-a-url' }), 'LLM_CONFIG']]) {
       await assert.rejects(createScriptService({ llm: createLlm(c) })(req()), (error) => error.code === code && !error.retryable);
     }
   });
