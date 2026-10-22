@@ -22,8 +22,12 @@ export function providerConfig(env = {}) {
     llmTimeoutMs: num(e.LLM_TIMEOUT_MS, 45000),
     llmCooldownMs: num(e.LLM_COOLDOWN_MS, 120000),
     llmMaxTokens: bounded(e.LLM_MAX_TOKENS, 6000, 1024, 8192),
-    // Narration requires ElevenLabs credentials unless a lower-quality provider is explicitly selected.
+    // Narration: auto prefers the free Edge-TTS voice when its CLI is installed,
+    // then ElevenLabs when a key is present. Explicit modes never switch silently.
     ttsProvider: e.TTS_PROVIDER || 'auto',
+    edgeTtsBin: e.EDGE_TTS_BIN || 'edge-tts',
+    edgeTtsVoice: e.EDGE_TTS_VOICE || '',
+    edgeTtsRate: e.EDGE_TTS_RATE || '-4%',
     espeakBin: e.ESPEAK_BIN || 'espeak-ng',
     ttsUrl: e.TTS_URL || '',
     elevenLabsApiKey: e.ELEVENLABS_API_KEY || e.ELEVENLABS_API || '',

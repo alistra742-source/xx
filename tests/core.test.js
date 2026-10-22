@@ -1,5 +1,8 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
+import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { ACTIONS, BACKGROUNDS, LIMITS } from '../shared/constants.js';
 import { normalizeProject, validateGenerateRequest, ValidationError, sceneCountFor, normalizeAction, inferStoryMeta } from '../shared/schema.js';
 import { splitNarration, subtitleCues } from '../shared/subtitles.js';
@@ -188,12 +191,37 @@ describe('legacy template utility (not used by production generation)', () => {
 });
 
 describe('TTS configuration', () => {
-  test('automatic voice requires neural credentials instead of silently falling back', async () => {
-    const tts = await createTts({ ttsProvider: 'auto', espeakBin: 'definitely-not-an-espeak-binary', ttsTimeoutMs: 100 });
+  test('automatic voice prefers the free Edge-TTS CLI and otherwise reports what is missing', async () => {
+    const tts = await createTts({ ttsProvider: 'auto', edgeTtsBin: 'definitely-not-an-edge-binary', espeakBin: 'definitely-not-an-espeak-binary', ttsTimeoutMs: 100 });
     assert.equal(tts.enabled, false);
     assert.equal(tts.name, 'elevenlabs-neural-male');
-    assert.match(tts.error, /ELEVENLABS_API/);
+    assert.match(tts.error, /ELEVENLABS_API|Edge-TTS/);
     assert.equal((await createTts({ ttsProvider: 'none' })).enabled, false);
+  });
+
+  test('an explicit edge voice reports a missing CLI instead of changing narrator', async () => {
+    await assert.rejects(
+      createTts({ ttsProvider: 'edge', edgeTtsBin: 'definitely-not-an-edge-binary', ttsTimeoutMs: 1000 }),
+      (error) => error.code === 'TTS_NOT_CONFIGURED' && /edge-tts/i.test(error.message),
+    );
+  });
+
+  test('edge voice writes audio through its CLI and auto selects it without a key', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'edge-tts-test-'));
+    const bin = join(dir, 'edge-tts');
+    await writeFile(bin, '#!/bin/sh\nout=""\nwhile [ $# -gt 0 ]; do\n  case "$1" in\n    --write-media) out="$2"; shift 2;;\n    *) shift;;\n  esac\ndone\n[ -n "$out" ] || exit 0\nprintf "ID3" > "$out"\nhead -c 200 /dev/zero >> "$out"\n');
+    await chmod(bin, 0o755);
+    try {
+      const tts = await createTts({ ttsProvider: 'auto', edgeTtsBin: bin, elevenLabsApiKey: '', ttsTimeoutMs: 4000 });
+      assert.equal(tts.status().provider, 'edge');
+      assert.equal(tts.status().quality, 'neural-free');
+      assert.equal(tts.enabled, true);
+      const path = await tts.synth('A short line for the voice test.', join(dir, 'scene-1'));
+      assert.match(path, /\.mp3$/);
+      assert.ok((await readFile(path)).length >= 128);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });
 

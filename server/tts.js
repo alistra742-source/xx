@@ -1,7 +1,7 @@
 // Server-only narration adapters. Lower-quality voices require explicit opt-in;
 // a neural-provider failure must never silently change the narrator.
 import { spawn } from 'node:child_process';
-import { writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 
 export class TtsError extends Error {
   constructor(message, { status = 503, code = 'TTS_UNAVAILABLE', retryable = false } = {}) {
@@ -9,6 +9,17 @@ export class TtsError extends Error {
   }
 }
 const missingKey = 'Natural male narration is unavailable: set ELEVENLABS_API or ELEVENLABS_API_KEY on the server, then restart. Or explicitly select TTS_PROVIDER=espeak/gtts for a lower-quality voice.';
+const missingEdge = 'Edge-TTS is not installed. Install it with "python3 -m pip install edge-tts" (the Docker image already includes it), or set EDGE_TTS_BIN to its path. Edge-TTS is free and needs no key.';
+const missingAnyVoice = 'Narration is unavailable: install the free Edge-TTS CLI (python3 -m pip install edge-tts) for neural speech with no key, or set ELEVENLABS_API/ELEVENLABS_API_KEY. TTS_PROVIDER=espeak/gtts also works for a lower-quality voice.';
+
+// Free neural voices from Microsoft's read-aloud service. Edge-TTS is a
+// community CLI for that endpoint, not a supported API, so it is probed at
+// startup and its failures are reported instead of switching providers.
+const EDGE_VOICES = {
+  en: 'en-US-GuyNeural', es: 'es-ES-AlvaroNeural', fr: 'fr-FR-HenriNeural', de: 'de-DE-ConradNeural',
+  pt: 'pt-BR-AntonioNeural', it: 'it-IT-DiegoNeural', ja: 'ja-JP-KeitaNeural', ko: 'ko-KR-InJoonNeural',
+  hi: 'hi-IN-MadhurNeural', ar: 'ar-SA-HamedNeural', ru: 'ru-RU-DmitryNeural', tr: 'tr-TR-AhmetNeural',
+};
 const MAX_BYTES = 10 * 1024 * 1024;
 const clean = (value) => String(value || '').trim();
 const clamp = (value, fallback, min, max) => Number.isFinite(Number(value)) && value !== undefined ? Math.max(min, Math.min(max, Number(value))) : fallback;
@@ -75,6 +86,31 @@ function run(bin, args, timeoutMs) {
     child.on('close', (code) => { clearTimeout(timer); code === 0 ? resolve() : reject(new TtsError('Explicit eSpeak voice failed to generate narration.')); });
   });
 }
+
+/** Run the edge-tts CLI without a shell, so narration text can never be executed. */
+function runEdge(bin, args, timeoutMs, label = 'Edge-TTS') {
+  return new Promise((resolve, reject) => {
+    let child;
+    try { child = spawn(bin, args, { stdio: ['ignore', 'ignore', 'pipe'] }); }
+    catch { reject(new TtsError(missingEdge, { code: 'TTS_NOT_CONFIGURED' })); return; }
+    let settled = false;
+    let timer;
+    const finish = (fn, value) => { if (settled) return; settled = true; clearTimeout(timer); fn(value); };
+    timer = setTimeout(() => { child.kill('SIGKILL'); finish(reject, new TtsError(`${label} narration timed out. Please retry.`, { code: 'TTS_TIMEOUT', retryable: true })); }, timeoutMs);
+    child.on('error', (error) => finish(reject, new TtsError(error?.code === 'ENOENT' ? missingEdge : `${label} could not start. Check EDGE_TTS_BIN.`, { code: 'TTS_NOT_CONFIGURED' })));
+    child.on('close', (code) => {
+      if (code === 0) return finish(resolve);
+      // stderr can contain the narration text, so never surface it.
+      finish(reject, new TtsError(`${label} failed (exit ${code}). Check network access or retry.`, { code: 'TTS_PROVIDER_ERROR', retryable: true }));
+    });
+  });
+}
+
+/** Startup probe: the CLI exists and can at least print its usage. */
+async function edgeInstalled(bin, timeoutMs) {
+  try { await runEdge(bin, ['--help'], Math.min(8000, Math.max(1000, timeoutMs)), 'Edge-TTS'); return true; }
+  catch { return false; }
+}
 function langCode(lang) {
   const value = clean(lang || 'en').toLowerCase();
   return ({ english: 'en', spanish: 'es', french: 'fr', german: 'de', portuguese: 'pt', italian: 'it', japanese: 'ja', korean: 'ko', hindi: 'hi', arabic: 'ar', russian: 'ru', turkish: 'tr' })[value] || (/^[a-z]{2}(?:[-_][a-z]{2})?$/.test(value) ? value.slice(0, 2) : 'en');
@@ -86,10 +122,29 @@ export async function createTts(config = {}) {
   const voiceId = clean(config.elevenLabsVoiceId) || 'pNInz6obpgDQGcFmaJgB';
   const model = clean(config.elevenLabsModelId) || 'eleven_multilingual_v2';
   const timeout = clamp(config.ttsTimeoutMs, 30000, 1, 120000);
-  let provider = mode === 'auto' ? 'elevenlabs' : mode;
+  const edgeBin = clean(config.edgeTtsBin) || 'edge-tts';
+  const edgeRate = clean(config.edgeTtsRate) || '-4%';
+  let provider = mode;
+  if (mode === 'auto') provider = (await edgeInstalled(edgeBin, timeout)) ? 'edge' : 'elevenlabs';
   let configured = false, quality = 'unavailable', synth;
   let authenticated = null, lastError = null;
-  if (provider === 'elevenlabs') {
+  if (provider === 'edge') {
+    if (mode === 'edge' && !(await edgeInstalled(edgeBin, timeout))) throw new TtsError(missingEdge, { code: 'TTS_NOT_CONFIGURED' });
+    configured = true; quality = 'neural-free';
+    const voice = clean(config.edgeTtsVoice);
+    synth = async (text, outPath, lang) => {
+      const path = `${outPath}.mp3`;
+      const chosen = voice || EDGE_VOICES[langCode(lang)] || EDGE_VOICES.en;
+      // The CLI's argparse rejects a space-separated negative rate; it must be --rate=-4%.
+      const rate = /^[+-]\d{1,3}%$/.test(edgeRate) ? edgeRate : '-4%';
+      await runEdge(edgeBin, ['--voice', chosen, `--rate=${rate}`, '--text', text, '--write-media', path], timeout);
+      let bytes;
+      try { bytes = await readFile(path); } catch { throw new TtsError('Edge-TTS did not write an audio file. Please retry.', { code: 'TTS_INVALID_AUDIO', retryable: true }); }
+      if (!validMp3(bytes)) throw new TtsError('Edge-TTS returned invalid audio. Please retry.', { code: 'TTS_INVALID_AUDIO', retryable: true });
+      authenticated = true;
+      return path;
+    };
+  } else if (provider === 'elevenlabs') {
     configured = Boolean(key); quality = 'neural';
     if (!configured && mode === 'elevenlabs') throw new TtsError(`TTS_PROVIDER=elevenlabs requires ELEVENLABS_API or ELEVENLABS_API_KEY. ${missingKey}`);
     synth = async (text, outPath) => {
@@ -132,12 +187,12 @@ export async function createTts(config = {}) {
       const bytes = await requestAudio(config.ttsUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text, language }) }, timeout, 'Custom TTS', false);
       const out = validMp3(bytes) ? `${path}.mp3` : path; await writeFile(out, bytes); return out;
     };
-  } else throw new TtsError('Unknown TTS_PROVIDER. Use auto, elevenlabs, none, espeak, gtts, or http.');
+  } else throw new TtsError('Unknown TTS_PROVIDER. Use auto, edge, elevenlabs, none, espeak, gtts, or http.');
   const enabled = configured && provider !== 'none';
   return {
-    name: provider === 'elevenlabs' ? 'elevenlabs-neural-male' : provider === 'espeak' ? 'espeak-ng' : provider === 'gtts' ? 'google-tts' : provider,
-    enabled, error: !enabled && provider !== 'none' ? missingKey : null,
-    status() { return { provider, configured, enabled, quality, voiceId: provider === 'elevenlabs' ? voiceId : null, model: provider === 'elevenlabs' ? model : null, authenticated, lastError }; },
+    name: provider === 'edge' ? 'edge-tts-neural-free' : provider === 'elevenlabs' ? 'elevenlabs-neural-male' : provider === 'espeak' ? 'espeak-ng' : provider === 'gtts' ? 'google-tts' : provider,
+    enabled, error: !enabled && provider !== 'none' ? (provider === 'edge' ? missingEdge : provider === 'elevenlabs' ? missingKey : missingAnyVoice) : null,
+    status() { return { provider, configured, enabled, quality, voiceId: provider === 'elevenlabs' ? voiceId : provider === 'edge' ? (clean(config.edgeTtsVoice) || EDGE_VOICES.en) : null, model: provider === 'elevenlabs' ? model : null, free: provider === 'edge', authenticated, lastError }; },
     async synth(...args) {
       try { const result = await synth(...args); lastError = null; return result; }
       catch (err) {

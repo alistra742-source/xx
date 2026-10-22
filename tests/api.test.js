@@ -7,7 +7,7 @@ import { createApp } from '../server/index.js';
 
 test('HTTP API writes a built-in storyboard without a model and reports missing voice honestly', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'story-api-test-'));
-  const { server } = await createApp({ outputDir: dir, llamaUrl: '', llmApiKey: '', llmEnabled: true, ttsProvider: 'auto', elevenLabsApiKey: '' });
+  const { server } = await createApp({ outputDir: dir, llamaUrl: '', llmApiKey: '', llmEnabled: true, ttsProvider: 'auto', edgeTtsBin: 'definitely-not-an-edge-binary', elevenLabsApiKey: '' });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const root = `http://127.0.0.1:${server.address().port}`;
   const post = (path, body) => fetch(`${root}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });

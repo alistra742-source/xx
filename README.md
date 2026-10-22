@@ -4,16 +4,18 @@ Turn your own idea into a storyboard, illustrated animation, natural narration, 
 
 Story generation works with **no configuration at all**: without a model the studio's built-in writer turns the prompt into a complete storyboard, so **Make my story** always produces a video. Point `LLAMA_URL` at a model when you want language-model-written prose instead.
 
+Narration is free too. The Docker image installs **Edge-TTS**, so `TTS_PROVIDER=auto` gives neural speech with no key, no signup and no per-character billing. ElevenLabs stays available by setting a key and `TTS_PROVIDER=elevenlabs`.
+
 ## Railway setup
 
 1. Deploy this repository using the included Dockerfile and `railway.json`.
 2. Optional: point the app at an OpenAI-compatible model server by setting `LLAMA_URL` (for example `http://llama.railway.internal:8080/v1` for a llama.cpp companion service) or `LLM_BASE_URL`. Without it the built-in writer produces the storyboard, so no model and no provider key are required.
-3. Add `ELEVENLABS_API` **or** `ELEVENLABS_API_KEY` for neural male narration. The default voice is Adam; optionally change `ELEVENLABS_VOICE_ID`.
+3. Narration needs no key: the image installs Edge-TTS and `auto` selects it. Optionally set `EDGE_TTS_VOICE` (default `en-US-GuyNeural`) or `EDGE_TTS_RATE`. For ElevenLabs instead, set `ELEVENLABS_API`/`ELEVENLABS_API_KEY` and `TTS_PROVIDER=elevenlabs`.
 4. Deploy/restart after changing variables. Open **Check connections** and check the displayed build revision to ensure you are seeing the new deployment.
 
 Model and voice keys stay server-side. A server being configured is not proof it works: configuration and reachability are reported separately. Story checks call the model server's `/models` endpoint; narration is only marked authenticated after successful synthesis, avoiding a paid test request or a false rejection of speech-only keys.
 
-With no model configured, `/api/script` and `/api/prompt/enhance` are served by the built-in writer (`server/script/instant.js`, `source: "instant"`) and the studio labels those storyboards as instant. A model that **is** configured stays the source of truth: its errors are reported, never silently replaced by the built-in writer. Narration has no silent fallback either — a missing speech key reports itself instead of switching to eSpeak or Google voices.
+With no model configured, `/api/script` and `/api/prompt/enhance` are served by the built-in writer (`server/script/instant.js`, `source: "instant"`) and the studio labels those storyboards as instant. A model that **is** configured stays the source of truth: its errors are reported, never silently replaced by the built-in writer. The same rule applies to voice: `auto` prefers the free Edge-TTS CLI, then ElevenLabs when a key is set, and reports which one produced the audio; an explicitly selected provider never switches silently.
 
 ## Studio workflow
 
@@ -31,6 +33,13 @@ Requires Node.js 20.19+ (Node 22 recommended), and FFmpeg for MP4 export. Docker
 npm ci
 npm run build
 npm start          # stories work immediately via the built-in writer
+```
+
+For free neural narration outside Docker, install the Edge-TTS CLI once and point the server at it:
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install edge-tts
+EDGE_TTS_BIN=.venv/bin/edge-tts npm start
 ```
 
 For model-written stories, run any OpenAI-compatible server and point the app at it:
@@ -51,7 +60,7 @@ The app does not automatically load `.env`. For local file-based variables, copy
 
 `npm run build:sites` writes `sites-build/`: a bundled Cloudflare Worker, the built studio assets and the deploy manifest. Cloudflare Workers cannot run FFmpeg, native canvas or a writable filesystem, so this build serves the API routes that only need `fetch()`:
 
-- Working: storyboards (`/api/script`, built-in writer when no model is set), prompt planning, `/api/config`, diagnostics, and ElevenLabs narration over the `LLAMA_URL` / `ELEVENLABS_API` site variables.
+- Working: storyboards (`/api/script`, built-in writer when no model is set), prompt planning, `/api/config`, diagnostics, and ElevenLabs narration over the `LLAMA_URL` / `ELEVENLABS_API` site variables. Edge-TTS is Node-only (a Worker cannot spawn the CLI), so the hosted site uses ElevenLabs when configured and otherwise reports voice as unavailable.
 - Not available: MP4 export. The API answers `501 MP4_UNSUPPORTED` and the studio's **Export WebM** button records the video in the browser instead.
 - The Node server (`npm start`) remains the full deployment, including MP4.
 - Preview deployments are public and have no sign-in, so anyone with the URL can spend configured provider quota.
@@ -74,7 +83,10 @@ Deploy only the contents of `sites-build/`. Test it locally with `npx wrangler d
 | `ELEVENLABS_MODEL_ID` | `eleven_multilingual_v2` |
 | `ELEVENLABS_STABILITY`, `ELEVENLABS_SIMILARITY_BOOST`, `ELEVENLABS_STYLE` | Expressiveness and voice identity settings, clamped to 0–1 |
 | `ELEVENLABS_SPEED`, `ELEVENLABS_USE_SPEAKER_BOOST` | Natural speech speed and speaker boost |
-| `TTS_PROVIDER` | `auto` means ElevenLabs only; alternatives require explicit `espeak`, `gtts`, `http`, or `none` |
+| `TTS_PROVIDER` | `auto` prefers free Edge-TTS, then ElevenLabs; or explicitly `edge`, `elevenlabs`, `espeak`, `gtts`, `http`, `none` |
+| `EDGE_TTS_BIN` | `edge-tts`; the Docker image sets `/opt/edge-tts/bin/edge-tts` |
+| `EDGE_TTS_VOICE` | Empty means a male voice for the story language (`en-US-GuyNeural` by default) |
+| `EDGE_TTS_RATE` | `-4%`, slightly slower than natural for narration |
 | `TTS_TIMEOUT_MS`, `ESPEAK_BIN`, `TTS_URL` | Speech deadline and explicit alternative-provider configuration |
 | `FFMPEG_BIN` | `ffmpeg` |
 | `OUTPUT_DIR`, `JOB_TTL_MINUTES`, `MAX_EXPORT_QUEUE` | Temporary output location, expiry, queue capacity |
@@ -86,6 +98,7 @@ Deploy only the contents of `sites-build/`. Test it locally with `npx wrangler d
 - `POST /api/diagnostics` refreshes supported connection checks without generating a story or paid speech.
 - Exports run one at a time and stream frames through FFmpeg. Output files expire; download promptly.
 - Drawings and animations are procedural, with a finite set of supported settings and actions. Scenery is composed from a shared drawn-object library (houses, apartment blocks, doors, windows, phones, laundry, cars, street furniture) and the wardrobe has 16 hats, 14 tops and 14 accessories, all drawn by the same renderer. A storyboard can direct them but cannot invent arbitrary new artwork or reproduce a reference video exactly. This is not a diffusion/video-generation model.
+- Edge-TTS talks to Microsoft's read-aloud endpoint through a community CLI, not a supported API. It is free and needs no key, but Microsoft can change or block it without notice; install it in the image and keep ElevenLabs or eSpeak as a fallback. Edge-TTS and MP4 export are Node-only.
 - Provider quota, live Railway credentials, and deployment status must be checked in the actual running service. Local mocked tests do not verify them.
 
 ## Layout

@@ -15,3 +15,5 @@ work-*/
 /freebuff-sites-build/
 .sites/
 sites-build/
+
+.venv/

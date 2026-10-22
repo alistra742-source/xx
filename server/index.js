@@ -96,7 +96,7 @@ export async function createApp(overrides = {}) {
     }
 
     if (req.method === 'POST' && path === '/api/voice') {
-      if (!tts.enabled) throw new HttpError(503, tts.error || 'Natural narration is not configured. Set ELEVENLABS_API or ELEVENLABS_API_KEY on this Railway service, or turn narration off.');
+      if (!tts.enabled) throw new HttpError(503, tts.error || 'Narration is not configured. Install the free Edge-TTS CLI (no key) or set ELEVENLABS_API/ELEVENLABS_API_KEY, or turn narration off.');
       const body = await readJson(req);
       const text = typeof body.text === 'string' ? body.text.trim().slice(0, LIMITS.maxNarrationChars) : '';
       const language = typeof body.language === 'string' ? body.language.slice(0, 40) : 'English';

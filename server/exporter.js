@@ -74,7 +74,7 @@ export async function buildNarration({ project, tts, dir, lang, signal, bin, fps
   if (!project.narration) return null;
   const requestedScenes = project.scenes.filter((sc) => String(sc.narration || '').trim());
   if (requestedScenes.length === 0) throw new ExportError('Narration is enabled, but the story has no narration text. Regenerate the script or turn narration off.');
-  if (!tts?.enabled) throw new ExportError(tts?.error || 'Natural narration is unavailable. Set ELEVENLABS_API or ELEVENLABS_API_KEY on the server, or turn narration off.');
+  if (!tts?.enabled) throw new ExportError(tts?.error || 'Narration is unavailable. Install the free Edge-TTS CLI or set ELEVENLABS_API/ELEVENLABS_API_KEY on the server, or turn narration off.');
   const segs = [];
   for (let i = 0; i < project.scenes.length; i++) {
     if (signal?.aborted) throw new ExportCancelled();
