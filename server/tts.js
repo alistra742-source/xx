@@ -2,6 +2,8 @@
 // a neural-provider failure must never silently change the narrator.
 import { spawn } from 'node:child_process';
 import { readFile, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 export class TtsError extends Error {
   constructor(message, { status = 503, code = 'TTS_UNAVAILABLE', retryable = false } = {}) {
@@ -106,6 +108,54 @@ function runEdge(bin, args, timeoutMs, label = 'Edge-TTS') {
   });
 }
 
+/**
+ * Run the Python word-timing helper. Text goes through stdin, never argv, and
+ * the helper prints JSON {words:[{text,start,end}]} on stdout.
+ */
+function runEdgeWords(script, voice, rate, text, outPath, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    let child;
+    try { child = spawn(script.python || 'python3', [script.file, voice, rate, outPath], { stdio: ['pipe', 'pipe', 'pipe'] }); }
+    catch { reject(new TtsError(missingEdge, { code: 'TTS_NOT_CONFIGURED' })); return; }
+    let out = '', settled = false, timer;
+    const finish = (fn, value) => { if (settled) return; settled = true; clearTimeout(timer); fn(value); };
+    timer = setTimeout(() => { child.kill('SIGKILL'); finish(reject, new TtsError('Edge-TTS narration timed out. Please retry.', { code: 'TTS_TIMEOUT', retryable: true })); }, timeoutMs);
+    child.stdout.on('data', (d) => { if (out.length < MAX_BYTES) out += d; });
+    child.stdin.on('error', () => {});
+    child.stdin.end(text);
+    child.on('error', (error) => finish(reject, new TtsError(error?.code === 'ENOENT' ? missingEdge : 'Edge-TTS word helper could not start.', { code: 'TTS_NOT_CONFIGURED' })));
+    child.on('close', (code) => {
+      if (code !== 0) return finish(reject, new TtsError(`Edge-TTS failed (exit ${code}). Check network access or retry.`, { code: 'TTS_PROVIDER_ERROR', retryable: true }));
+      try {
+        const parsed = JSON.parse(out);
+        if (!Array.isArray(parsed.words)) throw new Error('bad shape');
+        finish(resolve, { words: parsed.words });
+      } catch { finish(reject, new TtsError('Edge-TTS word timings were invalid. Please retry.', { code: 'TTS_INVALID_AUDIO', retryable: true })); }
+    });
+  });
+}
+
+/** Resolve the word-timing helper if its Python environment can import edge_tts. */
+async function edgeWordsHelper(edgeBin, pythonOverride, timeoutMs) {
+  const file = fileURLToPath(new URL('./edge-words.py', import.meta.url));
+  const python = pythonOverride || (edgeBin.includes('/') ? join(dirname(edgeBin), 'python') : 'python3');
+  try {
+    await new Promise((resolve, reject) => {
+      const child = spawn(python, ['-c', 'import edge_tts'], { stdio: 'ignore' });
+      const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error('timeout')); }, Math.min(8000, Math.max(1000, timeoutMs)));
+      child.on('error', reject);
+      child.on('close', (code) => { clearTimeout(timer); code === 0 ? resolve() : reject(new Error('missing')); });
+    });
+    return { file, python };
+  } catch { return null; }
+}
+
+/** Word timings written beside a synthesized file; [] when none exist. */
+export async function readWordTimings(audioPath) {
+  try { const parsed = JSON.parse(await readFile(`${audioPath}.words.json`, 'utf8')); return Array.isArray(parsed) ? parsed : []; }
+  catch { return []; }
+}
+
 /** Startup probe: the CLI exists and can at least print its usage. */
 async function edgeInstalled(bin, timeoutMs) {
   try { await runEdge(bin, ['--help'], Math.min(8000, Math.max(1000, timeoutMs)), 'Edge-TTS'); return true; }
@@ -128,8 +178,11 @@ export async function createTts(config = {}) {
   if (mode === 'auto') provider = (await edgeInstalled(edgeBin, timeout)) ? 'edge' : 'elevenlabs';
   let configured = false, quality = 'unavailable', synth;
   let authenticated = null, lastError = null;
+  // Word timings need the Python edge-tts library next to the CLI; without it the CLI still narrates.
+  let wordHelper = null;
   if (provider === 'edge') {
     if (mode === 'edge' && !(await edgeInstalled(edgeBin, timeout))) throw new TtsError(missingEdge, { code: 'TTS_NOT_CONFIGURED' });
+    wordHelper = await edgeWordsHelper(edgeBin, clean(config.edgePython), timeout);
     configured = true; quality = 'neural-free';
     const voice = clean(config.edgeTtsVoice);
     synth = async (text, outPath, lang) => {
@@ -137,8 +190,14 @@ export async function createTts(config = {}) {
       const chosen = voice || EDGE_VOICES[langCode(lang)] || EDGE_VOICES.en;
       // The CLI's argparse rejects a space-separated negative rate; it must be --rate=-4%.
       const rate = /^[+-]\d{1,3}%$/.test(edgeRate) ? edgeRate : '-4%';
-      await runEdge(edgeBin, ['--voice', chosen, `--rate=${rate}`, '--text', text, '--write-media', path], timeout);
       let bytes;
+      if (wordHelper) {
+        // The helper also reports per-word timings; they are stored beside the audio.
+        const { words } = await runEdgeWords(wordHelper, chosen, rate, text, path, timeout);
+        await writeFile(`${path}.words.json`, JSON.stringify(words));
+      } else {
+        await runEdge(edgeBin, ['--voice', chosen, `--rate=${rate}`, '--text', text, '--write-media', path], timeout);
+      }
       try { bytes = await readFile(path); } catch { throw new TtsError('Edge-TTS did not write an audio file. Please retry.', { code: 'TTS_INVALID_AUDIO', retryable: true }); }
       if (!validMp3(bytes)) throw new TtsError('Edge-TTS returned invalid audio. Please retry.', { code: 'TTS_INVALID_AUDIO', retryable: true });
       authenticated = true;

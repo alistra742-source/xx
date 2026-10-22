@@ -1,7 +1,7 @@
 // Browser-side frame drawing shared by the live preview and the WebM fallback.
 import { ASPECT_RATIOS } from '../shared/constants.js';
 import { renderFrame } from '../shared/renderer.js';
-import { subtitleCues } from '../shared/subtitles.js';
+import { sceneCues } from '../shared/subtitles.js';
 
 /** Preview / WebM canvas size: short side is `short` pixels. */
 export function canvasSize(aspectRatio, short = 540) {
@@ -47,7 +47,7 @@ export function drawProject(ctx, project, t, W, H, subs) {
   const sc = project.scenes[index];
   let cues = cueCache.get(sc);
   if (!cues) {
-    cues = sc.narration ? subtitleCues(sc.narration, 0, sc.duration) : [];
+    cues = sc.narration ? sceneCues({ text: sc.narration, duration: sc.duration, words: sc.wordTimings, rate: sc.wordRate }) : [];
     cueCache.set(sc, cues);
   }
   const cue = cues.find((c) => local >= c.start && local < c.end);

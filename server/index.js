@@ -13,7 +13,7 @@ import { createJobs } from './jobs.js';
 import { renderMp4, frameSize } from './exporter.js';
 import { createLlm } from './script/llm.js';
 import { createScriptService, instantEnhance, instantImprove, modelReady } from './script/index.js';
-import { createTts } from './tts.js';
+import { createTts, readWordTimings } from './tts.js';
 import { withVoiceCache } from './voice-cache.js';
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.woff2': 'font/woff2' };
@@ -108,7 +108,11 @@ export async function createApp(overrides = {}) {
         const audio = await readFile(voicePath);
         if (audio.length < 44) throw new HttpError(503, 'The voice provider returned an empty audio file.');
         const type = voicePath.endsWith('.mp3') ? 'audio/mpeg' : 'audio/wav';
-        return send(res, 200, audio, { 'content-type': type, 'content-length': audio.length, 'cache-control': 'no-store' });
+        // Word timings (Edge-TTS only) ride in a header so the audio body stays unchanged.
+        const words = await readWordTimings(voicePath);
+        const headers = { 'content-type': type, 'content-length': audio.length, 'cache-control': 'no-store' };
+        if (words.length) headers['x-word-timings'] = Buffer.from(JSON.stringify(words)).toString('base64');
+        return send(res, 200, audio, headers);
       } catch (err) {
         if (err instanceof HttpError) throw err;
         if (err.code && Number.isInteger(err.status)) throw err;

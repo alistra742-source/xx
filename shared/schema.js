@@ -256,7 +256,19 @@ function normalizeScene(raw, index, characters, warnings) {
     cameraMotion: ['static', 'push_in', 'pan_left', 'pan_right'].includes(scene.cameraMotion ?? scene.direction?.cameraMotion) ? (scene.cameraMotion ?? scene.direction.cameraMotion) : 'static',
     shotDescription: str(scene.shotDescription ?? scene.direction?.shotDescription, 1200),
     continuity: str(scene.continuity ?? scene.direction?.continuity, 1600),
+    choice: normalizeChoice(scene.choice),
   };
+}
+
+/** A viewer decision at the end of a scene: 2-3 labelled options, each jumping to a scene index. */
+export function normalizeChoice(raw) {
+  if (!raw || typeof raw !== 'object' || !Array.isArray(raw.options)) return null;
+  const options = raw.options
+    .map((o) => ({ label: str(o?.label, 40, ''), goto: Number.isInteger(o?.goto) ? o.goto : null }))
+    .filter((o) => o.label && o.goto !== null)
+    .slice(0, 3);
+  if (options.length < 2) return null;
+  return { prompt: str(raw.prompt, 120, 'What happens next?'), options };
 }
 
 /** Rescale scene durations so they sum to the target (keeping per-scene minimums). */
@@ -320,6 +332,13 @@ export function normalizeProject(raw, defaults = {}) {
     const fingerprint = JSON.stringify(content);
     if (seenScenes.has(fingerprint)) warnings.push(`Scene ${index + 1} repeats an earlier scene; preserved as authored.`);
     seenScenes.add(fingerprint);
+  });
+
+  // Drop choice jumps that point outside the story; a choice left with fewer than 2 options is removed.
+  scenes.forEach((sc) => {
+    if (!sc.choice) return;
+    sc.choice.options = sc.choice.options.filter((o) => o.goto >= 0 && o.goto < scenes.length);
+    if (sc.choice.options.length < 2) sc.choice = null;
   });
 
   fitDurations(scenes, duration);

@@ -8,7 +8,8 @@ import { join } from 'node:path';
 import { createCanvas } from '@napi-rs/canvas';
 import { ASPECT_RATIOS } from '../shared/constants.js';
 import { renderFrame } from '../shared/renderer.js';
-import { subtitleCues } from '../shared/subtitles.js';
+import { sceneCues, subtitleCues } from '../shared/subtitles.js';
+import { readWordTimings } from './tts.js';
 import { fitNarrationTiming } from '../shared/audio-timing.js';
 // Subtitle style scaling is shared with the browser preview (pure function, no DOM).
 import { subtitleStyle } from '../src/render.js';
@@ -70,7 +71,7 @@ async function wavDuration(path) {
 
 /** Build one WAV per scene. Updates this working project's scene durations to
  * preserve complete narration; renderMp4 passes a clone, never the caller object. */
-export async function buildNarration({ project, tts, dir, lang, signal, bin, fps }) {
+export async function buildNarration({ project, tts, dir, lang, signal, bin, fps, cueTiming = [] }) {
   if (!project.narration) return null;
   const requestedScenes = project.scenes.filter((sc) => String(sc.narration || '').trim());
   if (requestedScenes.length === 0) throw new ExportError('Narration is enabled, but the story has no narration text. Regenerate the script or turn narration off.');
@@ -103,6 +104,7 @@ export async function buildNarration({ project, tts, dir, lang, signal, bin, fps
       const timing = fitNarrationTiming(sc.duration, seconds + 0.04, { fps });
       sc.duration = timing.duration;
       const fitFilter = `atempo=${timing.playbackRate.toFixed(8)},apad=whole_dur=${sc.duration}`;
+      cueTiming[i] = { words: await readWordTimings(voice), rate: timing.playbackRate };
       await runFfmpeg(bin, ['-hide_banner', '-loglevel', 'error', '-y', '-i', decoded,
         '-af', fitFilter, '-t', String(sc.duration), '-ar', '44100', '-ac', '1', '-c:a', 'pcm_s16le', seg], { signal });
     } else {
@@ -137,8 +139,9 @@ export async function renderMp4({ project, options, outPath, workDir, tts, ffmpe
 
   onProgress({ phase: 'audio', progress: 0, message: 'Preparing narration…' });
   let audio;
+  const cueTiming = [];
   try {
-    audio = await buildNarration({ project, tts, dir: workDir, lang: project.language, signal, bin: ffmpegBin, fps });
+    audio = await buildNarration({ project, tts, dir: workDir, lang: project.language, signal, bin: ffmpegBin, fps, cueTiming });
   } catch (err) { await rm(workDir, { recursive: true, force: true }); throw err; }
   for (const sc of scenes) sc.duration = Math.max(1, Math.round(sc.duration * fps)) / fps;
   const totalFrames = scenes.reduce((sum, sc) => sum + Math.round(sc.duration * fps), 0);
@@ -175,7 +178,7 @@ export async function renderMp4({ project, options, outPath, workDir, tts, ffmpe
     let frame = 0;
     for (let si = 0; si < scenes.length; si++) {
       const sc = scenes[si];
-      const cues = subs.enabled !== false && sc.narration ? subtitleCues(sc.narration, 0, sc.duration) : [];
+      const cues = subs.enabled !== false && sc.narration ? sceneCues({ text: sc.narration, duration: sc.duration, ...cueTiming[si] }) : [];
       const sceneFrames = Math.round(sc.duration * fps);
       for (let f = 0; f < sceneFrames; f++) {
         if (signal?.aborted) throw new ExportCancelled();

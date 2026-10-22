@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { canvasSize, drawProject, locate, totalSeconds } from './render.js';
 import { adjustProjectForAudio, fitNarrationTiming } from '../shared/audio-timing.js';
+import { pendingChoice } from '../shared/choices.js';
 
 function metadata(audio) {
   if (audio.readyState >= 1 && Number.isFinite(audio.duration) && audio.duration > 0) return Promise.resolve();
@@ -12,6 +13,14 @@ function metadata(audio) {
     audio.addEventListener('loadedmetadata', ready); audio.addEventListener('error', failed); audio.load();
   });
 }
+// Word timings come from the Edge voice as base64 JSON; absent or invalid means the even split is used.
+function decodeWordTimings(header) {
+  if (!header) return [];
+  try {
+    const parsed = JSON.parse(atob(header));
+    return Array.isArray(parsed) ? parsed.filter((w) => w && typeof w.text === 'string' && Number.isFinite(w.start) && Number.isFinite(w.end)) : [];
+  } catch { return []; }
+}
 const contentKey = (p) => JSON.stringify([p.seed, p.language, p.narration, p.scenes.map((s) => s.narration)]);
 const voiceKey = (scene, p) => `${p.language || 'English'}\u0000${scene.narration || ''}`;
 
@@ -22,6 +31,8 @@ export default function Player({ project, subs, activeScene, onScene, onProjectT
   const [playing, setPlaying] = useState(false);
   const [preparing, setPreparing] = useState(false);
   const [voiceError, setVoiceError] = useState('');
+  const [picks, setPicks] = useState({});
+  const pending = pendingChoice(viewProject.scenes, picks);
   const total = Math.max(0.1, totalSeconds(viewProject));
   const tRef = useRef(0), playingRef = useRef(false), projectRef = useRef(project);
   const voices = useRef(new Map()), voiceScene = useRef(-1), generation = useRef(0);
@@ -61,10 +72,11 @@ export default function Player({ project, subs, activeScene, onScene, onProjectT
         const response = await fetch('/api/voice', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: scene.narration, language: snapshot.language }), signal: controller.signal });
         if (!response.ok) { const body = await response.json().catch(() => ({})); throw new Error(body.error || `Voice narration unavailable (${response.status})`); }
         const blob = await response.blob(); if (blob.size < 44) throw new Error('Narration returned empty audio.');
+        const words = decodeWordTimings(response.headers.get('x-word-timings'));
         url = URL.createObjectURL(blob); const audio = new Audio(url); audio.preload = 'auto';
         await metadata(audio);
         if (token !== generation.current) { audio.pause(); throw new Error('Narration preparation cancelled because the story changed.'); }
-        return { audio, url };
+        return { audio, url, words };
       } catch (error) { if (url) URL.revokeObjectURL(url); throw error; }
       finally { clearTimeout(timer); }
     })();
@@ -116,8 +128,18 @@ export default function Player({ project, subs, activeScene, onScene, onProjectT
         for (let i = 0; i < p.scenes.length; i++) if (p.scenes[i].narration?.trim()) durations[i] = (await loadVoice(i, p)).audio.duration + 0.04;
         if (token !== generation.current) return;
         const adjusted = adjustProjectForAudio(p, durations);
-        if (adjusted.scenes.some((sc, i) => Math.abs(sc.duration - p.scenes[i].duration) > 1e-6)) {
-          projectRef.current = adjusted; setViewProject(adjusted); onProjectTiming?.(adjusted);
+        // Keep word timings with their scene so captions follow the spoken words.
+        const withWords = adjusted.scenes.map((sc, i) => {
+          const voice = voices.current.get(voiceKey(p.scenes[i], p));
+          const resolved = voice && typeof voice.then !== 'function' ? voice : null;
+          if (!resolved?.words?.length) return sc;
+          const rate = fitNarrationTiming(sc.duration, resolved.audio.duration + 0.04).playbackRate;
+          return { ...sc, wordTimings: resolved.words, wordRate: rate };
+        });
+        const changed = adjusted.scenes.some((sc, i) => Math.abs(sc.duration - p.scenes[i].duration) > 1e-6);
+        if (changed || withWords.some((sc, i) => sc !== adjusted.scenes[i])) {
+          const next = { ...adjusted, scenes: withWords };
+          projectRef.current = next; setViewProject(next); if (changed) onProjectTiming?.(next);
         }
       }
       if (token !== generation.current) return;
@@ -135,8 +157,18 @@ export default function Player({ project, subs, activeScene, onScene, onProjectT
   }
   let accumulated = 0;
   const segments = viewProject.scenes.map((scene, i) => { const left = accumulated / total * 100; accumulated += scene.duration; return { i, left, width: scene.duration / total * 100, title: scene.narration || `Scene ${i + 1}` }; });
+  function choose(sceneIndex, optionIndex) {
+    setPicks((p) => ({ ...p, [sceneIndex]: optionIndex }));
+  }
+  const choice = pending >= 0 ? viewProject.scenes[pending].choice : null;
   return <div className="player">
-    <div className="stage" style={{ aspectRatio: `${W} / ${H}` }}><canvas ref={canvasRef} width={W} height={H} aria-label="Animation preview" /></div>
+    <div className="stage" style={{ aspectRatio: `${W} / ${H}` }}>
+      <canvas ref={canvasRef} width={W} height={H} aria-label="Animation preview" className={choice ? 'blurred' : ''} />
+      {choice && <div className="choice-modal" role="dialog" aria-modal="true" aria-label="Choose what happens next">
+        <p className="choice-prompt">{choice.prompt}</p>
+        {choice.options.map((o, i) => <button key={i} className="btn" onClick={() => choose(pending, i)}>{o.label}</button>)}
+      </div>}
+    </div>
     <div className="controls">
       <button className="btn small" onClick={toggle} disabled={preparing} aria-label={playing ? 'Pause' : 'Play'}>{preparing ? 'Preparing natural voice…' : playing ? '❚❚ Pause' : '▶ Play'}</button>
       {project.narration && <span className="voice-status">{preparing ? 'Preparing all narration' : playing ? '◖ Spoken voice on' : 'Play prepares voice (uses provider credits)'}</span>}

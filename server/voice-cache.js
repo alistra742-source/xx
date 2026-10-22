@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { readWordTimings } from './tts.js';
 
 export function withVoiceCache(provider, { maxBytes = 16 * 1024 * 1024, ttlMs = 10 * 60 * 1000, maxPending = 3 } = {}) {
   const cache = new Map();
@@ -33,7 +34,8 @@ export function withVoiceCache(provider, { maxBytes = 16 * 1024 * 1024, ttlMs = 
         if (!file) return null;
         const audio = await readFile(file);
         if (audio.length < 44 || audio.length > 10 * 1024 * 1024) throw new Error('The voice provider returned invalid audio size.');
-        const value = { bytes: audio, extension: file.endsWith('.mp3') ? '.mp3' : '.wav', createdAt: Date.now() };
+        const words = await readWordTimings(file);
+        const value = { bytes: audio, extension: file.endsWith('.mp3') ? '.mp3' : '.wav', words, createdAt: Date.now() };
         put(key, value); return value;
       } finally { await rm(dir, { recursive: true, force: true }); }
     })();
@@ -47,6 +49,7 @@ export function withVoiceCache(provider, { maxBytes = 16 * 1024 * 1024, ttlMs = 
       if (!audio) return null;
       const destination = audio.extension === '.mp3' ? `${outPath}.mp3` : outPath;
       await writeFile(destination, audio.bytes);
+      if (audio.words?.length) await writeFile(`${destination}.words.json`, JSON.stringify(audio.words));
       return destination;
     },
   };
