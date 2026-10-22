@@ -802,6 +802,9 @@ function drawFigure(ctx, sk, { ink, lineWidth, face, shadowColor, scale, drip, i
     ctx.quadraticCurveTo(scale * 0.045, -scale * 0.047, scale * 0.076, -scale * 0.009);
     ctx.lineTo(scale * 0.077, scale * 0.012); ctx.lineTo(-scale * 0.038, scale * 0.012);
     ctx.closePath(); ctx.fill(); ctx.stroke();
+    // White rubber sole edge gives each sneaker a clear base.
+    ctx.fillStyle = '#e8eef2';
+    ctx.beginPath(); ctx.rect(-scale * 0.038, scale * 0.004, scale * 0.115, scale * 0.008); ctx.fill();
     ctx.strokeStyle = '#d9e4e6'; ctx.lineWidth = scale * 0.009;
     seg([-scale * 0.03, scale * 0.003], [scale * 0.068, scale * 0.003]);
     ctx.strokeStyle = '#a7bacb'; ctx.lineWidth = scale * 0.004;
@@ -821,8 +824,12 @@ function drawFigure(ctx, sk, { ink, lineWidth, face, shadowColor, scale, drip, i
     ctx.fillStyle = skin; ctx.strokeStyle = outline; ctx.lineWidth = scale * 0.007;
     ctx.beginPath(); ctx.ellipse(hand[0], hand[1], scale * 0.027, scale * 0.032, -0.25, 0, TWO_PI); ctx.fill(); ctx.stroke();
     ctx.beginPath(); ctx.arc(hand[0] - scale * 0.02, hand[1] - scale * 0.006, scale * 0.012, 0, TWO_PI); ctx.fill(); ctx.stroke();
+    // Knuckle creases and a soft palm highlight give the mitten hand some form.
     ctx.strokeStyle = 'rgba(93,64,48,0.35)'; ctx.lineWidth = scale * 0.003;
     seg([hand[0] + scale * 0.003, hand[1] + scale * 0.009], [hand[0] + scale * 0.018, hand[1] + scale * 0.012]);
+    seg([hand[0] - scale * 0.004, hand[1] + scale * 0.002], [hand[0] + scale * 0.012, hand[1] - scale * 0.004]);
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.beginPath(); ctx.ellipse(hand[0] + scale * 0.006, hand[1] - scale * 0.012, scale * 0.008, scale * 0.012, -0.25, 0, TWO_PI); ctx.fill();
   };
   arm(sk.lShoulder, sk.lElbow, sk.lHand);
   limb(sk.shoulder, sk.neck, scale * 0.055, skin);
@@ -853,6 +860,9 @@ function drawFigure(ctx, sk, { ink, lineWidth, face, shadowColor, scale, drip, i
     faceGradient.addColorStop(1, '#a9e3ec');
   }
   const faceInk = inf > 0.45 ? '#102a1c' : '#07111f';
+  // Soft neck shadow under the chin sits the head onto the body.
+  ctx.fillStyle = 'rgba(38,29,48,0.22)';
+  ctx.beginPath(); ctx.ellipse(sk.neck[0] + sk.facing * r * 0.05, sk.neck[1] - r * 0.12, r * 0.42, r * 0.2, sk.headAngle || 0, 0, TWO_PI); ctx.fill();
   ctx.save();
   ctx.shadowColor = 'rgba(0,0,0,0.42)';
   ctx.shadowBlur = r * 0.18;

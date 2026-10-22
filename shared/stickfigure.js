@@ -99,8 +99,11 @@ function gait(t, { freq, swing, knee, lean, bob, armSwing, armBend, speed, smile
   const lT = swing * s + lean * 0.25;
   const rT = -swing * s + lean * 0.25;
   const aSwing = armSwing ?? swing * 0.85;
+  // Follow-through: the torso and head lag the stride a beat behind, and the
+  // forearms flick at the end of each swing for a more organic gait.
+  const lag = Math.sin(ph - 0.6);
   return pose({
-    torso: 180 - lean + 1.5 * Math.sin(ph * 2),
+    torso: 180 - lean + 1.5 * Math.sin(ph * 2 - 0.4) + 0.8 * lag,
     spineCurve: lean * 0.15,
     headTilt: -lean * 0.25 + 2 * Math.sin(ph),
     lThigh: lT,
