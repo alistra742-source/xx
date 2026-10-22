@@ -140,11 +140,22 @@ test('instruction echo is rejected but an ordinary premise sentence is permitted
   });
 });
 
-test('missing configuration and disabled model never invoke fetch or fallback templates', async () => {
+test('missing configuration and disabled model write a built-in storyboard without touching the network', async () => {
   await mockFetch(() => { throw new Error('Must not call'); }, async () => {
-    for (const [c, code] of [[loadConfig({}), 'LLM_NOT_CONFIGURED'], [config({ llmEnabled: false }), 'LLM_DISABLED'], [config({ llamaUrl: 'not-a-url' }), 'LLM_CONFIG']]) {
-      await assert.rejects(createScriptService({ llm: createLlm(c) })(req()), (error) => error.code === code && !error.retryable);
+    for (const c of [loadConfig({}), config({ llmEnabled: false }), config({ llamaUrl: 'not-a-url' })]) {
+      const result = await createScriptService({ llm: createLlm(c) })(req('A botanist repairs a greenhouse in the desert'));
+      assert.equal(result.source, 'instant');
+      assert.equal(result.project.scenes.length, sceneCountFor(30));
+      assert.ok(result.project.characters.length >= 1);
+      assert.ok(result.project.scenes.every((scene) => scene.action && scene.background === 'desert'));
     }
+  });
+});
+
+test('a configured model failure is surfaced instead of silently swapping in the built-in writer', async () => {
+  const llm = createLlm(config({ llmApiKey: 'k-test' }));
+  await mockFetch(async () => response({ error: 'boom' }, { ok: false, status: 500 }), async () => {
+    await assert.rejects(createScriptService({ llm })(req()), (error) => error.code === 'LLM_PROVIDER');
   });
 });
 

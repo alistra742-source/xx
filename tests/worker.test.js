@@ -52,17 +52,20 @@ test('worker serves the studio shell and reports an honest unconfigured provider
   assert.equal(JSON.stringify(config).includes('apiKey'), false);
 });
 
-test('worker never invents a story without a configured model server', async () => {
+test('worker writes a built-in storyboard when no model is configured', async () => {
   for (const path of ['/api/script', '/api/prompt/enhance']) {
     const res = await post(path, { topic: 'A violinist repairs a bridge with music', duration: 30 });
-    assert.equal(res.status, 503);
+    assert.equal(res.status, 200);
     const body = await res.json();
-    assert.equal(body.project, undefined);
-    assert.equal(body.code, 'LLM_NOT_CONFIGURED');
-    assert.match(body.error, /LLAMA_URL/);
+    assert.equal(body.source, 'instant');
+    assert.equal(body.project.scenes.length, sceneCountFor(30));
+    assert.ok(body.project.characters.length >= 1);
+    assert.ok(body.project.scenes.every((scene) => scene.action && scene.narration));
+    if (path === '/api/prompt/enhance') { assert.match(body.enhancedPrompt, /Scene 1/); assert.match(body.enhancedPrompt, /Action: /); }
   }
   const improve = await post('/api/improve-prompt', { topic: 'A violinist repairs a bridge' });
-  assert.equal(improve.status, 503);
+  assert.equal(improve.status, 200);
+  assert.equal((await improve.json()).source, 'instant');
 });
 
 test('worker generates a model story through the Sites API and omits an unset model name', async () => {

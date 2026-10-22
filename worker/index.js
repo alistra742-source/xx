@@ -12,7 +12,7 @@ import {
 import { validateGenerateRequest, ValidationError } from '../shared/schema.js';
 import { providerConfig } from '../shared/provider-config.js';
 import { createLlm } from '../server/script/llm.js';
-import { createScriptService } from '../server/script/index.js';
+import { createScriptService, instantEnhance, instantImprove, modelReady } from '../server/script/index.js';
 import { createVoice } from './elevenlabs.js';
 
 // workerd freezes Date at 0 while modules initialize, so the start time has to
@@ -51,7 +51,7 @@ const BUILD_ID = import.meta.env?.VITE_BUILD_ID || 'dev';
 function deployment(env) {
   return {
     revision: String(env.CF_VERSION_METADATA?.id || env.SOURCE_VERSION || BUILD_ID).slice(0, 12),
-    generationMode: 'ai-only',
+    generationMode: 'ai-with-instant-fallback',
     startedAt: new Date(startedAt()).toISOString(),
     runtime: 'workers',
   };
@@ -114,11 +114,14 @@ async function handleApi(request, env, url) {
     const body = await readJson(request);
     const topic = typeof body.topic === 'string' ? body.topic.trim().slice(0, LIMITS.maxTopicChars) : '';
     if (topic.length < 3) throw new HttpError(400, 'Enter a topic before improving the prompt.');
+    if (!modelReady(llm)) return json({ prompt: instantImprove(topic), source: 'instant' });
     return json({ prompt: await llm.improvePrompt(topic, { duration: body.duration }), source: 'llm' });
   }
 
   if (method === 'POST' && url.pathname === '/api/prompt/enhance') {
-    return json(await llm.enhancePrompt(validateGenerateRequest(await readJson(request))));
+    const input = validateGenerateRequest(await readJson(request));
+    if (!modelReady(llm)) return json(instantEnhance(input));
+    return json({ ...(await llm.enhancePrompt(input)), source: 'llm' });
   }
 
   // MP4 rendering is intentionally not emulated here.

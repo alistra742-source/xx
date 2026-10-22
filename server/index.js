@@ -12,7 +12,7 @@ import { loadConfig } from './config.js';
 import { createJobs } from './jobs.js';
 import { renderMp4, frameSize } from './exporter.js';
 import { createLlm } from './script/llm.js';
-import { createScriptService } from './script/index.js';
+import { createScriptService, instantEnhance, instantImprove, modelReady } from './script/index.js';
 import { createTts } from './tts.js';
 import { withVoiceCache } from './voice-cache.js';
 
@@ -61,7 +61,7 @@ export async function createApp(overrides = {}) {
   }
   const llm = createLlm(config);
   const generateScript = createScriptService({ llm });
-  const deployment = { revision: String(process.env.RAILWAY_GIT_COMMIT_SHA || process.env.SOURCE_VERSION || 'local').slice(0, 12), generationMode: 'ai-only', startedAt: new Date().toISOString() };
+  const deployment = { revision: String(process.env.RAILWAY_GIT_COMMIT_SHA || process.env.SOURCE_VERSION || 'local').slice(0, 12), generationMode: 'ai-with-instant-fallback', startedAt: new Date().toISOString() };
   const voiceStatus = () => typeof tts.status === 'function' ? tts.status() : { provider: tts.name, enabled: tts.enabled, configured: false, authenticated: null, lastError: tts.error || null };
   const jobs = createJobs({ maxQueue: config.maxQueue, ttlMs: config.jobTtlMs });
   await mkdir(config.outputDir, { recursive: true });
@@ -128,13 +128,15 @@ export async function createApp(overrides = {}) {
       const body = await readJson(req);
       const topic = typeof body.topic === 'string' ? body.topic.trim().slice(0, LIMITS.maxTopicChars) : '';
       if (topic.length < 3) throw new HttpError(400, 'Enter a topic before improving the prompt.');
+      if (!modelReady(llm)) return send(res, 200, { prompt: instantImprove(topic), source: 'instant' });
       const improved = await llm.improvePrompt(topic, { duration: body.duration });
       return send(res, 200, { prompt: improved, source: 'llm' });
     }
 
     if (req.method === 'POST' && path === '/api/prompt/enhance') {
       const input = validateGenerateRequest(await readJson(req));
-      return send(res, 200, await llm.enhancePrompt(input));
+      if (!modelReady(llm)) return send(res, 200, instantEnhance(input));
+      return send(res, 200, { ...(await llm.enhancePrompt(input)), source: 'llm' });
     }
 
     if (req.method === 'POST' && path === '/api/exports') {

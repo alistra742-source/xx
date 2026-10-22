@@ -77,7 +77,9 @@ export default function App() {
       setProject(res.project);
       setSource(res.source);
       const chosenTone = res.project.tone || 'story';
-      setNotice(`${chosenTone.toUpperCase()} STORY · ${res.project.characters.length} characters styled for the scene`);
+      setNotice(res.source === 'instant'
+        ? `INSTANT STORY · ${res.project.characters.length} characters · written by the studio's own writer, no model or key needed`
+        : `${chosenTone.toUpperCase()} STORY · ${res.project.characters.length} characters styled for the scene`);
       setActiveScene(0);
       setSubs({ ...DEFAULT_SUBS, enabled: res.project.subtitles?.enabled !== false });
     } catch (err) {
@@ -130,10 +132,10 @@ export default function App() {
       const result = await api('/api/prompt/enhance', { method: 'POST', body: { ...form, seed: Math.floor(Math.random() * 1e9) } });
       setProject(result.project);
       setEnhancedPrompt(result.enhancedPrompt || '');
-      setSource('llm');
+      setSource(result.source ?? 'llm');
       setActiveScene(0);
       setSubs({ ...DEFAULT_SUBS, enabled: result.project.subtitles?.enabled !== false });
-      setNotice('Your idea has a scene-by-scene production plan below. Your original prompt is unchanged; review the action, camera, and narration for each scene.');
+      setNotice(`Your idea has a scene-by-scene production plan below. Your original prompt is unchanged; review the action, camera, and narration for each scene.${result.source === 'instant' ? ' The built-in planner wrote this; connect a model for AI-written prose.' : ''}`);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -213,7 +215,7 @@ export default function App() {
         </div>
         {config && (
           <div className="badges">
-            <span className={`badge ${llm.authenticated === true ? 'ok' : 'warn'}`}>{llm.authenticated === true ? 'Story AI connected' : llm.lastError ? 'Story AI · check connection' : llm.enabled ? 'Story AI configured · unverified' : 'Story AI not configured'}</span>
+            <span className={`badge ${!llm.enabled || llm.authenticated === true ? 'ok' : 'warn'}`}>{!llm.enabled ? 'Instant story writer · no model needed' : llm.authenticated === true ? 'Story AI connected' : llm.lastError ? 'Story AI · check connection' : 'Story AI configured · unverified'}</span>
             <span className={`badge ${serverCanMp4 ? 'ok' : 'warn'}`}>{serverCanMp4 ? 'MP4 export' : 'WebM export only'}</span>
             <span className={`badge ${narration.available ? 'ok' : ''}`}>
               {narration.available ? `Voice: ${narration.provider}${narration.authenticated === true ? ' · connected' : narration.lastError ? ' · check connection' : ' · unverified'}` : 'Natural voice not configured'}
