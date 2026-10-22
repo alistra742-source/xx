@@ -281,7 +281,7 @@ export function inferStoryMeta(topic = '') {
   if (/zombie|virus|outbreak|apocalyp|infect|undead/i.test(t)) tone = 'scary';
   else if (/ghost|haunt|creepy|nightmare|monster|demon|stalker|3\s*am|alone|dark/i.test(t)) tone = 'scary';
   else if (/fight|war|battle|heist|robbery|ninja|assassin|chase|escape|police|agent/i.test(t)) tone = 'action';
-  else if (/funny|meme|fail|silly|prank|clown|awkward|fart|bro|school/i.test(t)) tone = 'funny';
+  else if (/funny|meme|fail|silly|prank|clown|awkward|fart|bro|school/i.test(t)) tone = 'dramatic';
   else if (/learn|explain|how\s+to|history|science|quantum|fact|guide/i.test(t)) tone = 'educational';
   else if (/gym|grind|rich|success|discipline|dream|win|hustle|motivat/i.test(t)) tone = 'motivational';
 
@@ -351,7 +351,7 @@ export function validateGenerateRequest(body) {
   }
   const inferred = inferStoryMeta(topic);
   const hasExplicitTone = typeof b.tone === 'string' && b.tone !== 'auto' && TONES.includes(b.tone);
-  const tone = hasExplicitTone ? b.tone : (b.tone === 'auto' || b.tone === undefined ? inferred.tone : 'funny');
+  const tone = hasExplicitTone ? b.tone : (b.tone === 'auto' || b.tone === undefined ? inferred.tone : 'dramatic');
 
   const hasExplicitCount = b.characterCount !== undefined && b.characterCount !== null && b.characterCount !== 'auto' && b.characterCount !== '';
   const characterCount = hasExplicitCount

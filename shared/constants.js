@@ -70,7 +70,7 @@ export const EMOTIONS = [
   'neutral', 'happy', 'sad', 'scared', 'angry', 'surprised', 'determined', 'confused', 'infected',
 ];
 
-export const TONES = ['funny', 'dramatic', 'educational', 'scary', 'motivational', 'action'];
+export const TONES = ['dramatic', 'educational', 'scary', 'motivational', 'action'];
 
 export const ANIMATION_STYLES = ['classic', 'bold', 'sketch'];
 

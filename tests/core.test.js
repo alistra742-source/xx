@@ -100,8 +100,8 @@ describe('schema', () => {
     assert.equal(ok.characterCount, 5);
     assert.equal(ok.autoTone, true);
     assert.equal(ok.autoCharacters, true);
-    const explicit = validateGenerateRequest({ topic: 'a funny cat story', duration: 30, tone: 'funny', characterCount: 99 });
-    assert.equal(explicit.tone, 'funny');
+    const explicit = validateGenerateRequest({ topic: 'a funny cat story', duration: 30, tone: 'dramatic', characterCount: 99 });
+    assert.equal(explicit.tone, 'dramatic');
     assert.equal(explicit.characterCount, LIMITS.maxCharacters);
   });
 
@@ -177,7 +177,7 @@ describe('legacy template utility (not used by production generation)', () => {
   });
 
   test('produces a valid project for every tone', () => {
-    for (const tone of ['funny', 'dramatic', 'educational', 'scary', 'motivational', 'action']) {
+    for (const tone of ['dramatic', 'educational', 'scary', 'motivational', 'action']) {
       const raw = templateProject({ topic: 'a stick figure surviving a zombie apocalypse', duration: 45, tone, autoTone: false, autoCharacters: false, style: 'classic', aspectRatio: '9:16', characterCount: 2, narration: true, subtitles: true, language: 'English', seed: 42 });
       const p = normalizeProject(raw, { duration: 45, tone });
       assert.equal(p.tone, tone);
@@ -295,7 +295,7 @@ test('LLM script request sends the key, model, and a per-request variation id', 
   const realFetch = globalThis.fetch;
   const calls = [];
   const story = {
-    title: 'Test', tone: 'funny',
+    title: 'Test', tone: 'dramatic',
     characters: [{ id: 'hero', name: 'Hero', role: 'protagonist', color: '#ff0000', isZombie: false }],
     scenes: ['Finds map.', 'Follows tracks.', 'Reaches oasis.'].map((narration, i) => ({ duration: 10 / 3, purpose: `Progress ${i}`, action: narration, background: 'desert', narration, effects: [], textOverlay: '', characters: [{ id: 'hero', action: 'walk', emotion: 'happy', isZombie: false, position: { x: 0.5, y: 0.8 }, targetX: 0.6 }] })),
   };
@@ -305,7 +305,7 @@ test('LLM script request sends the key, model, and a per-request variation id', 
   };
   try {
     const llm = createLlm({ llamaUrl: 'https://api.example.com/', llmApiKey: 'k-test', llmModel: 'm-test', llmTimeoutMs: 5000, llmCooldownMs: 0, llmMaxTokens: 500, llmEnabled: true });
-    const req = { topic: 'a hero finds a map in the desert', duration: 10, tone: 'funny', autoTone: false, style: 'classic', aspectRatio: '9:16', narration: true, subtitles: false, language: 'English', seed: 4242 };
+    const req = { topic: 'a hero finds a map in the desert', duration: 10, tone: 'dramatic', autoTone: false, style: 'classic', aspectRatio: '9:16', narration: true, subtitles: false, language: 'English', seed: 4242 };
     const { project, source } = await llm.generateScript(req);
     assert.equal(source, 'llm');
     assert.ok(project.scenes.length > 0);

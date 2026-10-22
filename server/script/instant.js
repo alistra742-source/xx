@@ -53,6 +53,28 @@ const VERBS = new Set(('learns learn builds build repairs repair befriends befri
   'grows grow catches catch digs dig sails sail drives drive climbs climb races race performs perform invents invent plans plan ' +
   'wants want needs need dreams dream hopes hope misses miss loves love fears fear leaves leave joins join quits quit').split(' '));
 
+// Physical actions a prompt can name outright. When one of these is aimed at a
+// second person, the built-in writer performs that action literally instead of
+// fitting the idea into a plot arc.
+const ACTION_VERBS = new Map([
+  ['punch', 'punch'], ['punches', 'punch'], ['punched', 'punch'], ['punching', 'punch'],
+  ['hit', 'hit'], ['hits', 'hit'], ['hitting', 'hit'],
+  ['slap', 'slap'], ['slaps', 'slap'], ['slapped', 'slap'], ['slapping', 'slap'],
+  ['kick', 'kick'], ['kicks', 'kick'], ['kicked', 'kick'], ['kicking', 'kick'],
+  ['shove', 'shove'], ['shoves', 'shove'], ['shoved', 'shove'], ['shoving', 'shove'],
+  ['tackle', 'tackle'], ['tackles', 'tackle'], ['tackled', 'tackle'], ['tackling', 'tackle'],
+  ['headbutt', 'headbutt'], ['headbutts', 'headbutt'], ['headbutted', 'headbutt'],
+  ['fight', 'fight'], ['fights', 'fight'], ['fighting', 'fight'],
+]);
+// The action must land on a person, otherwise "two men fight zombies" would be
+// staged as the two men fighting each other.
+const ACTION_RE = new RegExp(
+  `\\b(${[...ACTION_VERBS.keys()].sort((a, b) => b.length - a.length).join('|')})\\s+` +
+  '(?:(?:a|an|the|another|other|second|some)\\s+)?' +
+  '(?:man|woman|guy|girl|person|kid|dude|him|her|them|each other)\\b',
+  'i',
+);
+
 const GENRES = [
   { id: 'war', re: /\b(war|warfare|invasion|invaded|air[- ]?raid|siren|sirens|missile|missiles|bombing|bombed|army|soldier|soldiers|draft|frontline|front line|battle|combat|nuke|nuclear|military|enemy)\b/i },
   { id: 'outbreak', re: /\b(zombie|zombies|outbreak|virus|infection|infected|undead|apocalypse|apocalyptic|walker|walkers|plague|contagion)\b/i },
@@ -148,6 +170,8 @@ export function readPremise(topic) {
     name: agent ? cap(agent) : '',
     background: setting[1],
     place: setting[2],
+    hasPlace: Boolean(PLACES.find(([re]) => re.test(lower))),
+    literalVerb: ACTION_VERBS.get(lower.match(ACTION_RE)?.[1]?.toLowerCase()) || '',
   };
 }
 
@@ -292,7 +316,7 @@ function warArc(premise, req) {
       actors: [{ id: 'lead', action: 'point', emotion: 'determined', x: 0.46 }],
     },
   ];
-  return { tone: 'funny', titles: ['The Night the Sirens Started', 'War Declared (Sort Of)', 'Just a Drill'], cast, beats, extras };
+  return { tone: 'dramatic', titles: ['The Night the Sirens Started', 'War Declared (Sort Of)', 'Just a Drill'], cast, beats, extras };
 }
 
 function outbreakArc(premise, req) {
@@ -767,6 +791,162 @@ function everydayArc(premise, req) {
   return { tone: 'dramatic', titles: ['One More Try', 'The Long Night', 'Not Tonight'], cast, beats, extras };
 }
 
+/**
+ * The idea is a named physical action between two people ("a man punches
+ * another man"). Perform it beat by beat: face-off, wind-up, the action, the
+ * reaction, the aftermath, the exit. The action word is used verbatim in the
+ * narration and the on-screen text, so the video does what was asked instead
+ * of turning it into a metaphor.
+ */
+function literalArc(premise, req) {
+  const { rng } = setup(premise, req);
+  // "a man punches another man" is about two people, not a character called
+  // "Man", so give them names from the cast pool.
+  const hero = pick(NAMES, rng);
+  const mate = pick(MATES, rng);
+  const verb = premise.literalVerb || 'punch';
+  const Verb = cap(verb);
+  const ground = premise.hasPlace ? premise.background : 'street';
+  const cast = [
+    { id: 'lead', name: hero, role: 'protagonist', color: CHARACTER_COLORS[0] },
+    { id: 'rival', name: mate, role: 'rival', color: CHARACTER_COLORS[1] },
+  ];
+  const beats = [
+    {
+      purpose: 'The face-off', background: ground, overlay: `ONE ${verb.toUpperCase()}`, effects: ['night'],
+      action: `${hero} and ${mate} stand across from each other, fists loose at their sides.`,
+      cam: 'wide', motion: 'push_in',
+      lines: [
+        'Two men stand across from each other and say nothing.',
+        'One man, one street, and one very bad decision.',
+        'Nobody speaks. Both of them know exactly how this ends.',
+      ],
+      actors: [
+        { id: 'lead', action: 'stand', emotion: 'determined', x: 0.3, facing: 1 },
+        { id: 'rival', action: 'stand', emotion: 'angry', x: 0.7, facing: -1 },
+      ],
+    },
+    {
+      purpose: `Wind up the ${verb}`, background: ground, overlay: 'THE FIRST MOVE', effects: ['motion_lines'],
+      action: `${hero} steps in and pulls his arm back, eyes locked on ${mate}.`,
+      cam: 'medium', motion: 'pan_right',
+      lines: [
+        'The first man steps in and pulls his arm back.',
+        'He closes the distance and loads up the punch.',
+        'One step closer. His fist comes up.',
+      ],
+      actors: [
+        { id: 'lead', action: 'walk', emotion: 'determined', x: 0.28, facing: 1 },
+        { id: 'rival', action: 'stand', emotion: 'angry', x: 0.74, facing: -1 },
+      ],
+    },
+    {
+      purpose: `The ${verb}`, background: ground, overlay: verb.toUpperCase(), effects: ['impact_flash', 'shake'],
+      action: `${hero} throws the ${verb} and it lands clean on ${mate}.`,
+      cam: 'close', motion: 'static',
+      lines: [
+        `He throws the ${verb}, and it lands clean.`,
+        `One ${verb}. It connects exactly where he aimed.`,
+        `The ${verb} snaps across the second man's jaw.`,
+      ],
+      actors: [
+        { id: 'lead', action: 'fight', emotion: 'angry', x: 0.44, facing: 1 },
+        { id: 'rival', action: 'surprised', emotion: 'surprised', x: 0.72, facing: -1 },
+      ],
+    },
+    {
+      purpose: 'The drop', background: ground, overlay: 'DOWN', effects: ['shake'],
+      action: `${mate} folds and drops to the ground.`,
+      cam: 'medium', motion: 'pan_left',
+      lines: [
+        'The second man drops and stays on the ground.',
+        'His legs give out. He hits the floor.',
+        'One shot is all it takes to put him down.',
+      ],
+      actors: [
+        { id: 'lead', action: 'stand', emotion: 'determined', x: 0.42, facing: 1 },
+        { id: 'rival', action: 'defeated', emotion: 'sad', x: 0.72, facing: -1 },
+      ],
+    },
+    {
+      purpose: 'The silence', background: ground, overlay: 'OVER', effects: ['night'],
+      action: `${hero} stands over ${mate}, breathing hard, and says nothing.`,
+      cam: 'wide', motion: 'static',
+      lines: [
+        `One ${verb}. That was the whole fight.`,
+        'He stands there, breathing hard, and says nothing.',
+        'Nobody gets up. Nobody says a word.',
+      ],
+      actors: [
+        { id: 'lead', action: 'stand', emotion: 'neutral', x: 0.4, facing: 1 },
+        { id: 'rival', action: 'defeated', emotion: 'sad', x: 0.72, facing: -1 },
+      ],
+    },
+    {
+      purpose: 'The exit', background: ground, overlay: 'DONE', effects: ['fade'],
+      action: `${hero} turns and walks away without looking back.`,
+      cam: 'wide', motion: 'pan_right',
+      lines: [
+        'Then he turns and walks away without looking back.',
+        'He leaves him on the ground and keeps walking.',
+        'No words. He just walks out of frame.',
+      ],
+      actors: [
+        { id: 'lead', action: 'walk', emotion: 'neutral', x: 0.5, facing: 1 },
+        { id: 'rival', action: 'defeated', emotion: 'sad', x: 0.78, facing: -1 },
+      ],
+    },
+  ];
+  const extras = [
+    {
+      purpose: 'Both faces', background: ground, overlay: 'CLOSE', effects: ['zoom'],
+      action: `Close on ${hero} and ${mate}, close enough to hear them breathe.`,
+      cam: 'close', motion: 'push_in',
+      lines: ['Both faces fill the frame: one calm, one already done.', 'Close on the two of them, close enough to hear them breathe.'],
+      actors: [
+        { id: 'lead', action: 'stand', emotion: 'determined', x: 0.3, facing: 1 },
+        { id: 'rival', action: 'stand', emotion: 'angry', x: 0.7, facing: -1 },
+      ],
+    },
+    {
+      purpose: 'The fist', background: ground, overlay: 'THE FIST', effects: ['motion_lines'],
+      action: `Close on ${hero}'s fist, tightening before it swings.`,
+      cam: 'close', motion: 'static',
+      lines: ["Close on his fist, tightening before it swings.", 'His hand curls into a fist and does not shake.'],
+      actors: [{ id: 'lead', action: 'point', emotion: 'angry', x: 0.42, facing: 1 }],
+    },
+    {
+      purpose: 'The impact', background: ground, overlay: 'IMPACT', effects: ['impact_flash'],
+      action: `The moment of impact turns ${mate}'s head sideways.`,
+      cam: 'close', motion: 'push_in',
+      lines: ["Close on the second man's jaw at the exact moment it turns.", 'The hit turns his head before his feet move.'],
+      actors: [{ id: 'rival', action: 'surprised', emotion: 'surprised', x: 0.5, facing: -1 }],
+    },
+    {
+      purpose: 'The floor', background: ground, overlay: 'FLOOR', effects: ['shake'],
+      action: `The camera looks down at ${mate} flat on the concrete.`,
+      cam: 'wide', motion: 'static',
+      lines: ['The camera looks down at him on the concrete.', 'He is down, one arm across the ground.'],
+      actors: [{ id: 'rival', action: 'defeated', emotion: 'sad', x: 0.5, facing: -1 }],
+    },
+    {
+      purpose: 'The hand', background: ground, overlay: 'BREATHE', effects: ['day'],
+      action: `${hero} exhales and shakes out his hand.`,
+      cam: 'close', motion: 'static',
+      lines: ['The first man exhales and shakes out his hand.', 'His knuckles are red. He does not check them.'],
+      actors: [{ id: 'lead', action: 'stand', emotion: 'neutral', x: 0.48, facing: 1 }],
+    },
+    {
+      purpose: 'The street', background: ground, overlay: 'GONE', effects: ['fade'],
+      action: `${hero} walks until the street swallows him.`,
+      cam: 'wide', motion: 'pan_right',
+      lines: ['He keeps walking until the street swallows him.', 'One man walks off. The other stays on the ground.'],
+      actors: [{ id: 'lead', action: 'walk', emotion: 'neutral', x: 0.3, facing: 1 }],
+    },
+  ];
+  return { tone: 'action', titles: [`One ${Verb}`, `${Verb}`, 'No Words'], cast, beats, extras };
+}
+
 const ARCS = { war: warArc, outbreak: outbreakArc, heist: heistArc, horror: horrorArc, everyday: everydayArc };
 
 /* -------------------------------------------------------------- assembly ---- */
@@ -853,7 +1033,7 @@ function sceneCharacters(beat, cast) {
 /** Builds a complete project from the prompt with no model and no network. */
 export function writeInstantStory(req) {
   const premise = readPremise(req.topic);
-  const arc = (ARCS[premise.genre] || everydayArc)(premise, req);
+  const arc = premise.literalVerb ? literalArc(premise, req) : (ARCS[premise.genre] || everydayArc)(premise, req);
   const count = sceneCountFor(req.duration);
   const beats = composeBeats(arc.beats, arc.extras, count);
   const seconds = Math.round((Number(req.duration) / count) * 1000) / 1000;
