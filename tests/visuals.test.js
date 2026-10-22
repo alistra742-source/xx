@@ -4,6 +4,7 @@ import { createCanvas } from '@napi-rs/canvas';
 import { renderFrame, layoutFor, bedroomStaging, stageCast, cameraFor, BACKGROUND_INFO } from '../shared/renderer.js';
 import { bedroomLayout } from '../shared/scenery.js';
 import { ACTIONS, solvePose, buildSkeleton } from '../shared/stickfigure.js';
+import { HATS, TOPS, ACCESSORIES } from '../shared/constants.js';
 
 const sceneFor = (action, background = 'street') => ({
   duration: 8, background, effects: ['rain', 'zoom'],
@@ -21,6 +22,23 @@ test('all supported actions produce finite articulated poses, including long sce
       assert.ok(value.every(Number.isFinite), `${action}/${time}: invalid joint`);
     }
   }
+});
+
+test('every hat, top and accessory draws something visible on the figure', () => {
+  const W = 240, H = 320;
+  const canvas = createCanvas(W, H), ctx = canvas.getContext('2d');
+  const draw = (drip) => {
+    renderFrame(ctx, sceneFor('stand', 'white'), 1, {
+      W, H,
+      projectCharacters: [{ id: 'hero', name: 'Guy', role: 'protagonist', color: '#3b82f6', drip: { hat: 'none', top: 'none', accessory: 'none', outfitColor: '#3b82f6', accentColor: '#facc15', ...drip } }],
+    });
+    return canvas.toBuffer('image/png');
+  };
+  const base = draw({ top: 'tshirt' });
+  for (const hat of HATS.filter((h) => h !== 'none')) assert.notDeepEqual(draw({ hat }), base, `hat ${hat} is invisible`);
+  // A bare torso is rendered as a plain t-shirt on purpose, so compare against that.
+  for (const top of TOPS.filter((t) => t !== 'none' && t !== 'tshirt')) assert.notDeepEqual(draw({ top }), base, `top ${top} is invisible`);
+  for (const accessory of ACCESSORIES.filter((a) => a !== 'none')) assert.notDeepEqual(draw({ accessory }), base, `accessory ${accessory} is invisible`);
 });
 
 test('procedural scene frames are deterministic and independent of render order', () => {

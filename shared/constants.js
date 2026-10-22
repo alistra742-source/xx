@@ -80,16 +80,19 @@ export const SUBTITLE_POSITIONS = ['bottom', 'middle', 'top'];
 export const HATS = [
   'none', 'cap', 'backwards_cap', 'beanie', 'hood_up', 'crown',
   'top_hat', 'headband', 'helmet', 'halo', 'horns', 'bandana',
+  'cowboy_hat', 'bucket_hat', 'sun_hat', 'beret',
 ];
 
 export const TOPS = [
   'none', 'hoodie', 'puff_jacket', 'suit', 'tshirt', 'vest',
   'tracksuit', 'lab_coat', 'tactical', 'tattered',
+  'button_shirt', 'tank_top', 'jacket', 'jersey',
 ];
 
 export const ACCESSORIES = [
   'none', 'shades', 'glasses', 'chain', 'headphones', 'mask',
   'scarf', 'backpack', 'katana', 'bat',
+  'watch', 'tie', 'crossbody_bag', 'cape',
 ];
 
 export const ASPECT_RATIOS = {

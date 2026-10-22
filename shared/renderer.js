@@ -146,7 +146,7 @@ function drawTopDrip(ctx, sk, drip, lineWidth, ink) {
   ctx.stroke();
 
   // Sleeves along upper arms
-  const sleeveFrac = top === 'tshirt' || top === 'vest' ? (top === 'vest' ? 0 : 0.48) : 0.85;
+  const sleeveFrac = top === 'tank_top' ? 0 : top === 'tshirt' || top === 'vest' ? (top === 'vest' ? 0 : 0.48) : top === 'jersey' ? 0.4 : 0.85;
   if (sleeveFrac > 0) {
     for (const [sh, el] of [[sk.lShoulder, sk.lElbow], [sk.rShoulder, sk.rElbow]]) {
       const ex = sh[0] + (el[0] - sh[0]) * sleeveFrac;
@@ -258,6 +258,91 @@ function drawTopDrip(ctx, sk, drip, lineWidth, ink) {
     ctx.beginPath();
     ctx.arc(sx + dx * 0.5, sy + dy * 0.5, lineWidth * 0.55, 0, TWO_PI);
     ctx.fill();
+  } else if (top === 'button_shirt') {
+    // Folded collar, button placket and pearl buttons.
+    ctx.fillStyle = '#f8fafc';
+    ctx.beginPath();
+    ctx.moveTo(sx - nx * wTop * 0.44, sy);
+    ctx.lineTo(sx + nx * wTop * 0.44, sy);
+    ctx.lineTo(sx + dx * 0.16 + nx * wTop * 0.16, sy + dy * 0.16);
+    ctx.lineTo(sx + dx * 0.16 - nx * wTop * 0.16, sy + dy * 0.16);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(2,6,23,0.4)';
+    ctx.lineWidth = Math.max(1, lineWidth * 0.16);
+    ctx.beginPath();
+    ctx.moveTo(sx + nx * wTop * 0.08, sy);
+    ctx.lineTo(hx + nx * wBot * 0.08, hy);
+    ctx.stroke();
+    for (let i = 0; i < 4; i++) {
+      const f = 0.24 + i * 0.18;
+      ctx.fillStyle = acc;
+      ctx.beginPath();
+      ctx.arc(sx + dx * f + nx * wTop * 0.02, sy + dy * f + ny * wTop * 0.02, Math.max(1, lineWidth * 0.15), 0, TWO_PI);
+      ctx.fill();
+    }
+  } else if (top === 'tank_top') {
+    // Thin shoulder straps and a scooped neckline on a sleeveless fit.
+    ctx.strokeStyle = 'rgba(2,6,23,0.55)';
+    ctx.lineWidth = Math.max(1.6, lineWidth * 0.3);
+    ctx.beginPath();
+    ctx.moveTo(lsx, lsy);
+    ctx.lineTo(sx + dx * 0.16 - nx * wTop * 0.3, sy + dy * 0.16);
+    ctx.moveTo(rsx, rsy);
+    ctx.lineTo(sx + dx * 0.16 + nx * wTop * 0.3, sy + dy * 0.16);
+    ctx.stroke();
+    ctx.strokeStyle = acc;
+    ctx.lineWidth = Math.max(1.4, lineWidth * 0.2);
+    ctx.beginPath();
+    ctx.arc(sx + dx * 0.14, sy + dy * 0.14, wTop * 0.42, 0.15 * Math.PI, 0.85 * Math.PI);
+    ctx.stroke();
+  } else if (top === 'jacket') {
+    // Open jacket over a shirt, with a zip and a popped collar.
+    ctx.fillStyle = '#e2e8f0';
+    ctx.beginPath();
+    ctx.moveTo(sx - nx * wTop * 0.2, sy);
+    ctx.lineTo(sx + nx * wTop * 0.2, sy);
+    ctx.lineTo(hx + nx * wBot * 0.22, hy);
+    ctx.lineTo(hx - nx * wBot * 0.22, hy);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = acc;
+    ctx.lineWidth = Math.max(1.2, lineWidth * 0.16);
+    for (let i = 1; i < 6; i++) ctx.strokeRect(sx + dx * (i / 6) - lineWidth * 0.16, sy + dy * (i / 6) - lineWidth * 0.1, lineWidth * 0.32, lineWidth * 0.2);
+    ctx.fillStyle = lerpColor(col, '#ffffff', 0.16);
+    ctx.beginPath();
+    ctx.moveTo(sx - nx * wTop * 0.5, sy);
+    ctx.lineTo(sx - nx * wTop * 0.16, sy);
+    ctx.lineTo(sx + dx * 0.1 - nx * wTop * 0.2, sy + dy * 0.12);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(sx + nx * wTop * 0.5, sy);
+    ctx.lineTo(sx + nx * wTop * 0.16, sy);
+    ctx.lineTo(sx + dx * 0.1 + nx * wTop * 0.2, sy + dy * 0.12);
+    ctx.closePath();
+    ctx.fill();
+  } else if (top === 'jersey') {
+    // Sports jersey: chest panel, side stripes and a round number plate.
+    ctx.fillStyle = acc;
+    ctx.fillRect(sx + dx * 0.16 - wTop * 0.34, sy + dy * 0.16, wTop * 0.68, Math.max(1.5, torsoLen * 0.1));
+    ctx.fillStyle = '#f8fafc';
+    ctx.beginPath();
+    ctx.arc(sx + dx * 0.46, sy + dy * 0.46, wTop * 0.34, 0, TWO_PI);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(2,6,23,0.55)';
+    ctx.lineWidth = Math.max(1, lineWidth * 0.16);
+    ctx.beginPath();
+    ctx.arc(sx + dx * 0.46, sy + dy * 0.46, wTop * 0.34, 0, TWO_PI);
+    ctx.stroke();
+    ctx.strokeStyle = acc;
+    ctx.lineWidth = Math.max(1.4, lineWidth * 0.26);
+    ctx.beginPath();
+    ctx.moveTo(sx - nx * wTop * 0.9, sy + dy * 0.1);
+    ctx.lineTo(hx - nx * wBot * 0.9, hy);
+    ctx.moveTo(sx + nx * wTop * 0.9, sy + dy * 0.1);
+    ctx.lineTo(hx + nx * wBot * 0.9, hy);
+    ctx.stroke();
   }
   ctx.restore();
 }
@@ -365,6 +450,41 @@ function drawHatDrip(ctx, sk, drip, lineWidth) {
       ctx.closePath();
       ctx.fill();
     }
+  } else if (hat === 'cowboy_hat') {
+    ctx.fillStyle = col;
+    ctx.beginPath(); ctx.ellipse(0, -r * 0.5, r * 1.78, r * 0.34, 0, 0, TWO_PI); ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.78, -r * 0.55);
+    ctx.lineTo(-r * 0.5, -r * 1.4);
+    ctx.quadraticCurveTo(0, -r * 1.62, r * 0.5, -r * 1.4);
+    ctx.lineTo(r * 0.78, -r * 0.55);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = acc;
+    ctx.fillRect(-r * 0.74, -r * 0.8, r * 1.48, r * 0.2);
+  } else if (hat === 'bucket_hat') {
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.62, -r * 0.62);
+    ctx.lineTo(-r * 0.92, -r * 1.34);
+    ctx.lineTo(r * 0.92, -r * 1.34);
+    ctx.lineTo(r * 0.62, -r * 0.62);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath(); ctx.ellipse(0, -r * 0.6, r * 1.48, r * 0.28, 0, 0, TWO_PI); ctx.fill();
+    ctx.fillStyle = acc;
+    ctx.fillRect(-r * 0.9, -r * 1.22, r * 1.8, r * 0.16);
+  } else if (hat === 'sun_hat') {
+    ctx.fillStyle = '#fef3c7';
+    ctx.beginPath(); ctx.ellipse(0, -r * 0.62, r * 1.95, r * 0.3, 0, 0, TWO_PI); ctx.fill();
+    ctx.beginPath(); ctx.arc(0, -r * 0.66, r * 0.95, Math.PI, TWO_PI); ctx.fill();
+    ctx.fillStyle = acc;
+    ctx.fillRect(-r * 0.94, -r * 1.0, r * 1.88, r * 0.2);
+  } else if (hat === 'beret') {
+    ctx.fillStyle = col;
+    ctx.beginPath(); ctx.ellipse(-r * 0.14, -r * 0.9, r * 1.12, r * 0.5, -0.26, 0, TWO_PI); ctx.fill();
+    ctx.fillStyle = acc;
+    ctx.beginPath(); ctx.arc(r * 0.5, -r * 1.24, r * 0.15, 0, TWO_PI); ctx.fill();
   }
   ctx.restore();
 }
@@ -432,12 +552,83 @@ function drawAccessoryDrip(ctx, sk, drip, lineWidth, gazeShift) {
     ctx.beginPath();
     ctx.arc(hx, hy + r * 0.18, r * 0.88, 0, Math.PI);
     ctx.fill();
+  } else if (acc === 'backpack') {
+    const [hx2, hy2] = sk.hip;
+    ctx.strokeStyle = '#92400e';
+    ctx.lineWidth = Math.max(2, lineWidth * 0.45);
+    ctx.beginPath();
+    ctx.moveTo(sk.lShoulder[0], sk.lShoulder[1]);
+    ctx.lineTo(sk.lShoulder[0] + r * 0.22, hy2 - r * 0.35);
+    ctx.moveTo(sk.rShoulder[0], sk.rShoulder[1]);
+    ctx.lineTo(sk.rShoulder[0] - r * 0.22, hy2 - r * 0.35);
+    ctx.stroke();
+    ctx.fillStyle = drip?.accentColor || '#a16207';
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(hx2 + sk.facing * r * 0.2, hy2 - r * 0.25, r * 0.85, r * 0.95, r * 0.16);
+    else ctx.rect(hx2 + sk.facing * r * 0.2, hy2 - r * 0.25, r * 0.85, r * 0.95);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(2,6,23,0.4)';
+    ctx.fillRect(hx2 + sk.facing * r * 0.2, hy2 + r * 0.05, r * 0.85, Math.max(1, r * 0.1));
   } else if (acc === 'katana' || acc === 'bat') {
     ctx.strokeStyle = acc === 'katana' ? '#e2e8f0' : '#a16207';
     ctx.lineWidth = Math.max(2.5, lineWidth * 0.55);
     ctx.beginPath();
     ctx.moveTo(sk.shoulder[0] - sk.facing * r * 0.5, sk.shoulder[1] + r * 0.6);
     ctx.lineTo(sk.shoulder[0] - sk.facing * r * 1.4, sk.shoulder[1] - r * 1.3);
+    ctx.stroke();
+  } else if (acc === 'watch') {
+    const [wx, wy] = sk.rHand;
+    ctx.strokeStyle = '#e2e8f0';
+    ctx.lineWidth = Math.max(1.5, lineWidth * 0.32);
+    ctx.beginPath(); ctx.ellipse(wx, wy, r * 0.26, r * 0.16, 0.4, 0, TWO_PI); ctx.stroke();
+    ctx.fillStyle = drip?.accentColor || '#facc15';
+    ctx.beginPath(); ctx.arc(wx, wy, r * 0.09, 0, TWO_PI); ctx.fill();
+  } else if (acc === 'tie') {
+    const [nx, ny] = sk.neck;
+    ctx.fillStyle = drip?.accentColor || '#ef4444';
+    ctx.beginPath();
+    ctx.moveTo(nx, ny);
+    ctx.lineTo(nx + r * 0.2, ny + r * 0.28);
+    ctx.lineTo(nx, ny + r * 0.54);
+    ctx.lineTo(nx - r * 0.2, ny + r * 0.28);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(nx - r * 0.15, ny + r * 0.4);
+    ctx.lineTo(nx + r * 0.15, ny + r * 0.4);
+    ctx.lineTo(nx + r * 0.09, ny + r * 1.4);
+    ctx.lineTo(nx, ny + r * 1.56);
+    ctx.lineTo(nx - r * 0.09, ny + r * 1.4);
+    ctx.closePath();
+    ctx.fill();
+  } else if (acc === 'crossbody_bag') {
+    ctx.strokeStyle = '#a16207';
+    ctx.lineWidth = Math.max(2, lineWidth * 0.42);
+    ctx.beginPath();
+    ctx.moveTo(sk.lShoulder[0], sk.lShoulder[1]);
+    ctx.lineTo(sk.hip[0] + r * 0.55, sk.hip[1] + r * 0.25);
+    ctx.stroke();
+    ctx.fillStyle = drip?.accentColor || '#0ea5e9';
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(sk.hip[0] + r * 0.2, sk.hip[1] + r * 0.2, r * 0.72, r * 0.52, r * 0.1);
+    else ctx.rect(sk.hip[0] + r * 0.2, sk.hip[1] + r * 0.2, r * 0.72, r * 0.52);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(2,6,23,0.45)';
+    ctx.fillRect(sk.hip[0] + r * 0.2, sk.hip[1] + r * 0.4, r * 0.72, Math.max(1, r * 0.08));
+  } else if (acc === 'cape') {
+    ctx.fillStyle = drip?.accentColor || '#7c3aed';
+    ctx.beginPath();
+    ctx.moveTo(sk.lShoulder[0], sk.lShoulder[1]);
+    ctx.lineTo(sk.rShoulder[0], sk.rShoulder[1]);
+    ctx.lineTo(sk.rShoulder[0] - sk.facing * r * 1.1, sk.hip[1] + r * 2.1);
+    ctx.lineTo(sk.lShoulder[0] - sk.facing * r * 0.2, sk.hip[1] + r * 2.4);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(2,6,23,0.35)';
+    ctx.lineWidth = Math.max(1, lineWidth * 0.2);
+    ctx.beginPath();
+    ctx.moveTo(sk.lShoulder[0], sk.lShoulder[1] + r * 0.3);
+    ctx.lineTo(sk.rShoulder[0] - sk.facing * r * 0.8, sk.hip[1] + r * 2.2);
     ctx.stroke();
   }
   ctx.restore();

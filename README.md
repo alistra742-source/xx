@@ -85,7 +85,7 @@ Deploy only the contents of `sites-build/`. Test it locally with `npx wrangler d
 - `GET /api/config` reports safe provider status and deployment revision, never credentials.
 - `POST /api/diagnostics` refreshes supported connection checks without generating a story or paid speech.
 - Exports run one at a time and stream frames through FFmpeg. Output files expire; download promptly.
-- Drawings and animations are procedural, with a finite set of supported settings and actions. A storyboard can direct them but cannot invent arbitrary new artwork or reproduce a reference video exactly. This is not a diffusion/video-generation model.
+- Drawings and animations are procedural, with a finite set of supported settings and actions. Scenery is composed from a shared drawn-object library (houses, apartment blocks, doors, windows, phones, laundry, cars, street furniture) and the wardrobe has 16 hats, 14 tops and 14 accessories, all drawn by the same renderer. A storyboard can direct them but cannot invent arbitrary new artwork or reproduce a reference video exactly. This is not a diffusion/video-generation model.
 - Provider quota, live Railway credentials, and deployment status must be checked in the actual running service. Local mocked tests do not verify them.
 
 ## Layout

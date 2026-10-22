@@ -182,6 +182,298 @@ function drawStars(ctx, W, maxY, rnd, count = 35, t = 0) {
   }
 }
 
+/* ---- drawn object library -------------------------------------------------
+   Reusable set dressing: houses, apartment blocks, doors, windows, phones,
+   clothing on lines, cars and street furniture. Backgrounds compose these so
+   every frame is full of recognisable things instead of empty colour fields. */
+
+/** Paneled wood, glass shop or steel blast door with frame, handle and rivets. */
+function drawDoor(ctx, x, y, w, h, opts = {}) {
+  const style = opts.style || 'wood';
+  const u = Math.min(w, h);
+  rect(ctx, opts.trim || '#0b1220', x - w * 0.07, y - h * 0.04, w * 1.14, h * 1.04);
+  const grad = ctx.createLinearGradient(x, y, x + w, y + h);
+  if (style === 'steel') {
+    grad.addColorStop(0, '#94a3b8'); grad.addColorStop(0.45, '#475569'); grad.addColorStop(1, '#1e293b');
+  } else if (style === 'glass') {
+    grad.addColorStop(0, '#0f3b57'); grad.addColorStop(0.55, '#0ea5e9'); grad.addColorStop(1, '#082f49');
+  } else {
+    grad.addColorStop(0, '#8b5a3c'); grad.addColorStop(0.5, '#5b3420'); grad.addColorStop(1, '#3f2417');
+  }
+  rect(ctx, grad, x, y, w, h);
+  if (style === 'glass') {
+    rect(ctx, 'rgba(255,224,166,0.45)', x + w * 0.12, y + h * 0.1, w * 0.5, h * 0.45);
+    circle(ctx, '#fbbf24', x + w * 0.84, y + h * 0.55, Math.max(1.4, u * 0.03));
+  } else if (style === 'steel') {
+    ctx.strokeStyle = '#1f2937';
+    ctx.lineWidth = Math.max(1.5, u * 0.05);
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + w, y + h); ctx.moveTo(x + w, y); ctx.lineTo(x, y + h); ctx.stroke();
+    circle(ctx, '#0f172a', x + w * 0.5, y + h * 0.5, u * 0.16);
+    circle(ctx, '#94a3b8', x + w * 0.5, y + h * 0.5, u * 0.11);
+    circle(ctx, '#0f172a', x + w * 0.5, y + h * 0.5, u * 0.05);
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      circle(ctx, '#cbd5e1', x + w * 0.5 + Math.cos(a) * u * 0.21, y + h * 0.5 + Math.sin(a) * u * 0.21, Math.max(0.8, u * 0.02));
+    }
+  } else {
+    ctx.strokeStyle = 'rgba(0,0,0,0.32)';
+    ctx.lineWidth = Math.max(1, u * 0.022);
+    for (const [px, py, pw, ph] of [[0.14, 0.08, 0.72, 0.3], [0.14, 0.46, 0.72, 0.44]]) {
+      ctx.strokeRect(x + w * px, y + h * py, w * pw, h * ph);
+    }
+    circle(ctx, '#fbbf24', x + w * 0.84, y + h * 0.54, Math.max(1.4, u * 0.04));
+    rect(ctx, '#0f172a', x + w * 0.82, y + h * 0.58, Math.max(1, u * 0.014), Math.max(2, h * 0.045));
+  }
+  if (opts.number) {
+    rect(ctx, '#0f172a', x + w * 0.28, y - h * 0.16, w * 0.44, h * 0.1);
+    rect(ctx, '#e2e8f0', x + w * 0.34, y - h * 0.137, w * 0.32, h * 0.05);
+  }
+}
+
+/** Mullioned window with light, blinds, curtains and an optional flower box. */
+function drawWindow(ctx, x, y, w, h, opts = {}) {
+  const u = Math.min(w, h);
+  const warm = opts.light !== 'cool';
+  rect(ctx, opts.trim || '#334155', x - w * 0.06, y - h * 0.06, w * 1.12, h * 1.16);
+  rect(ctx, vGrad(ctx, y, y + h, warm ? [[0, '#fde68a'], [1, '#f59e0b']] : [[0, '#7dd3fc'], [1, '#1d4ed8']]), x, y, w, h);
+  rect(ctx, 'rgba(255,255,255,0.2)', x + w * 0.08, y + h * 0.06, w * 0.3, h * 0.7);
+  if (opts.blinds) {
+    for (let i = 0; i < 6; i++) rect(ctx, 'rgba(15,23,42,0.55)', x, y + h * (0.08 + i * 0.15), w, Math.max(1, h * 0.055));
+  }
+  rect(ctx, opts.trim || '#334155', x + w * 0.46, y, Math.max(1, w * 0.08), h);
+  rect(ctx, opts.trim || '#334155', x, y + h * 0.46, w, Math.max(1, h * 0.08));
+  rect(ctx, opts.trim || '#334155', x - w * 0.1, y + h, w * 1.2, Math.max(1.5, h * 0.09));
+  if (opts.curtain) {
+    poly(ctx, opts.curtain, [[x - w * 0.16, y - h * 0.1], [x + w * 0.22, y - h * 0.1], [x + w * 0.1, y + h * 1.02], [x - w * 0.16, y + h * 1.02]]);
+    poly(ctx, opts.curtain, [[x + w * 1.16, y - h * 0.1], [x + w * 0.78, y - h * 0.1], [x + w * 0.9, y + h * 1.02], [x + w * 1.16, y + h * 1.02]]);
+  }
+  if (opts.box) {
+    roundRect(ctx, '#7c2d12', x - w * 0.06, y + h * 1.05, w * 1.12, h * 0.2, Math.max(1, u * 0.06));
+    for (let i = 0; i < 4; i++) circle(ctx, i % 2 ? '#f472b6' : '#22c55e', x + w * (0.1 + i * 0.26), y + h * 1.02, Math.max(1, u * 0.08));
+  }
+}
+
+/** Free-standing house: gabled roof, chimney smoke, lit windows and a front door. */
+function drawHouse(ctx, x, ground, w, h, opts = {}) {
+  const u = Math.min(w, h);
+  const top = ground - h;
+  rect(ctx, opts.wall || '#cbd5e1', x, top, w, h);
+  rect(ctx, 'rgba(0,0,0,0.14)', x, top + h * 0.62, w, h * 0.38);
+  poly(ctx, opts.roof || '#7f1d1d', [[x - w * 0.08, top], [x + w * 0.5, top - h * 0.6], [x + w * 1.08, top]]);
+  poly(ctx, 'rgba(255,255,255,0.1)', [[x - w * 0.08, top], [x + w * 0.5, top - h * 0.6], [x + w * 0.5, top]]);
+  rect(ctx, '#7c2d12', x + w * 0.72, top - h * 0.5, w * 0.1, h * 0.3);
+  for (let i = 0; i < 3; i++) {
+    circle(ctx, `rgba(226,232,240,${0.2 - i * 0.05})`, x + w * 0.77 + (i + 1) * w * 0.03, top - h * (0.6 + i * 0.12), u * (0.05 + i * 0.03));
+  }
+  drawDoor(ctx, x + w * 0.4, ground - h * 0.52, w * 0.2, h * 0.52);
+  drawWindow(ctx, x + w * 0.09, top + h * 0.18, w * 0.2, h * 0.22, { light: opts.light || 'warm', box: true });
+  drawWindow(ctx, x + w * 0.71, top + h * 0.18, w * 0.2, h * 0.22, { light: 'cool', box: true });
+  rect(ctx, '#94a3b8', x + w * 0.34, ground - h * 0.04, w * 0.32, h * 0.04);
+  if (opts.fence) drawFence(ctx, x - w * 0.14, ground, w * 0.26, h * 0.3);
+  if (opts.mailbox) drawMailbox(ctx, x + w * 0.96, ground, h * 0.26);
+}
+
+/** Multi-storey apartment block with lit windows, balconies, laundry, awning and water tank. */
+function drawApartmentBlock(ctx, x, ground, w, h, rnd = () => 0.5, opts = {}) {
+  const top = ground - h;
+  const u = Math.min(w, h);
+  rect(ctx, opts.body || '#0f172a', x, top, w, h);
+  rect(ctx, 'rgba(255,255,255,0.06)', x, top, w, h * 0.035);
+  const floors = Math.max(3, Math.round(h / Math.max(26, u * 0.3)));
+  const floorH = h / floors;
+  const cols = Math.max(2, Math.round(w / Math.max(30, u * 0.34)));
+  for (let f = 0; f < floors - 1; f++) {
+    const y = top + f * floorH;
+    for (let c = 0; c < cols; c++) {
+      const wx = x + (c + 0.18) * (w / cols);
+      const ww = (w / cols) * 0.64;
+      const lit = rnd() > 0.38;
+      drawWindow(ctx, wx, y + floorH * 0.24, ww, floorH * 0.46, { light: lit && rnd() > 0.25 ? 'warm' : 'cool', blinds: !lit && rnd() > 0.5 });
+      if (c % 2 === 0 && rnd() > 0.45) {
+        rect(ctx, '#334155', wx - ww * 0.14, y + floorH * 0.76, ww * 1.28, Math.max(1, floorH * 0.07));
+        ctx.strokeStyle = '#64748b';
+        ctx.lineWidth = Math.max(1, u * 0.008);
+        for (let b = 0; b <= 4; b++) {
+          const bx = wx - ww * 0.12 + (b / 4) * ww * 1.24;
+          ctx.beginPath(); ctx.moveTo(bx, y + floorH * 0.76); ctx.lineTo(bx, y + floorH * 0.5); ctx.stroke();
+        }
+        if (rnd() > 0.55) drawClothesline(ctx, wx, y + floorH * 0.52, wx + ww, y + floorH * 0.52, 3, rnd, floorH * 1.1);
+      }
+    }
+  }
+  drawDoor(ctx, x + w * 0.36, ground - floorH * 1.02, w * 0.28, floorH * 1.02, { style: 'glass', number: true });
+  poly(ctx, '#1e293b', [[x + w * 0.22, ground - floorH * 1.14], [x + w * 0.78, ground - floorH * 1.14], [x + w * 0.74, ground - floorH * 0.98], [x + w * 0.26, ground - floorH * 0.98]]);
+  rect(ctx, '#475569', x + w * 0.66, top - h * 0.11, w * 0.22, h * 0.11);
+  poly(ctx, '#334155', [[x + w * 0.64, top - h * 0.11], [x + w * 0.77, top - h * 0.19], [x + w * 0.9, top - h * 0.11]]);
+}
+
+/** Rope line with shirts, trousers, towels, socks and pegs. */
+function drawClothesline(ctx, x1, y1, x2, y2, count = 4, rnd = () => 0.5, size = 40) {
+  const sag = size * 0.45;
+  ctx.strokeStyle = 'rgba(203,213,225,0.55)';
+  ctx.lineWidth = Math.max(1, size * 0.02);
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.quadraticCurveTo((x1 + x2) / 2, y1 + sag * 2, x2, y2); ctx.stroke();
+  const garments = ['#ef4444', '#f8fafc', '#3b82f6', '#facc15', '#a855f7', '#22c55e'];
+  for (let i = 1; i <= count; i++) {
+    const t = i / (count + 1);
+    const px = x1 + (x2 - x1) * t;
+    const py = y1 + (y2 - y1) * t + sag * 2 * t * (1 - t) * 0.5;
+    const cw = size * (0.34 + rnd() * 0.12);
+    const ch = size * (0.5 + rnd() * 0.28);
+    const color = garments[Math.floor(rnd() * garments.length) % garments.length];
+    if (rnd() > 0.68) {
+      rect(ctx, color, px - cw * 0.42, py, cw * 0.84, ch * 0.48);
+      rect(ctx, color, px - cw * 0.4, py + ch * 0.44, cw * 0.34, ch * 0.52);
+      rect(ctx, color, px + cw * 0.06, py + ch * 0.44, cw * 0.34, ch * 0.52);
+    } else {
+      poly(ctx, color, [[px - cw * 0.5, py], [px - cw * 0.28, py - ch * 0.06], [px + cw * 0.28, py - ch * 0.06], [px + cw * 0.5, py], [px + cw * 0.33, py + ch * 0.2], [px + cw * 0.3, py + ch * 0.7], [px - cw * 0.3, py + ch * 0.7], [px - cw * 0.33, py + ch * 0.2]]);
+      circle(ctx, 'rgba(0,0,0,0.22)', px, py + ch * 0.28, Math.max(1, cw * 0.05));
+    }
+    rect(ctx, '#fde68a', px - Math.max(1, cw * 0.05), py - ch * 0.1, Math.max(1.5, cw * 0.1), ch * 0.12);
+  }
+}
+
+/** Picket fence run. */
+function drawFence(ctx, x, ground, w, h) {
+  for (let i = 0; i < 6; i++) {
+    const px = x + (i / 5) * w;
+    poly(ctx, '#e2e8f0', [[px, ground], [px + w * 0.04, ground], [px + w * 0.04, ground - h * 0.84], [px + w * 0.02, ground - h], [px, ground - h * 0.84]]);
+  }
+  rect(ctx, '#94a3b8', x, ground - h * 0.62, w, Math.max(1, h * 0.06));
+  rect(ctx, '#94a3b8', x, ground - h * 0.3, w, Math.max(1, h * 0.06));
+}
+
+function drawMailbox(ctx, x, ground, h) {
+  rect(ctx, '#78350f', x, ground - h * 0.9, Math.max(2, h * 0.06), h * 0.9);
+  roundRect(ctx, '#0ea5e9', x - h * 0.15, ground - h * 0.98, h * 0.32, h * 0.24, h * 0.08);
+  rect(ctx, '#f8fafc', x - h * 0.1, ground - h * 0.9, h * 0.12, Math.max(1, h * 0.02));
+}
+
+function drawBin(ctx, x, ground, h) {
+  roundRect(ctx, '#334155', x, ground - h, h * 0.44, h, h * 0.07);
+  rect(ctx, '#64748b', x - h * 0.03, ground - h - h * 0.06, h * 0.5, h * 0.08);
+  rect(ctx, '#1e293b', x + h * 0.09, ground - h + h * 0.12, h * 0.26, Math.max(1, h * 0.2));
+}
+
+function drawHydrant(ctx, x, ground, h) {
+  rect(ctx, '#b91c1c', x - h * 0.07, ground - h * 0.72, h * 0.14, h * 0.72);
+  circle(ctx, '#ef4444', x, ground - h * 0.78, h * 0.1);
+  rect(ctx, '#7f1d1d', x - h * 0.14, ground - h * 0.5, h * 0.28, Math.max(1, h * 0.06));
+  rect(ctx, '#7f1d1d', x - h * 0.11, ground - h * 0.34, h * 0.22, Math.max(1, h * 0.05));
+}
+
+function drawBench(ctx, x, ground, w, h) {
+  for (const f of [0.28, 0.45, 0.85]) rect(ctx, '#78350f', x, ground - h * f, w, Math.max(1, h * 0.07));
+  rect(ctx, '#475569', x + w * 0.08, ground - h * 0.45, Math.max(1, h * 0.06), h * 0.45);
+  rect(ctx, '#475569', x + w * 0.88, ground - h * 0.45, Math.max(1, h * 0.06), h * 0.45);
+}
+
+function drawCar(ctx, x, ground, w, color = '#dc2626') {
+  const h = w * 0.44;
+  roundRect(ctx, color, x, ground - h * 0.66, w, h * 0.66, h * 0.14);
+  poly(ctx, color, [[x + w * 0.2, ground - h * 0.66], [x + w * 0.32, ground - h], [x + w * 0.72, ground - h], [x + w * 0.84, ground - h * 0.66]]);
+  rect(ctx, '#0f172a', x + w * 0.34, ground - h * 0.94, w * 0.13, h * 0.24);
+  rect(ctx, '#0f172a', x + w * 0.52, ground - h * 0.94, w * 0.15, h * 0.24);
+  for (const wx of [0.22, 0.8]) {
+    circle(ctx, '#e2e8f0', x + w * wx, ground - h * 0.06, h * 0.13);
+    circle(ctx, '#0f172a', x + w * wx, ground - h * 0.06, h * 0.065);
+  }
+  rect(ctx, '#fde68a', x + w * 0.95, ground - h * 0.46, w * 0.04, h * 0.12);
+  rect(ctx, '#ef4444', x + w * 0.01, ground - h * 0.46, w * 0.04, h * 0.12);
+}
+
+function drawPowerLine(ctx, x1, x2, groundY, h) {
+  for (const x of [x1, x2]) {
+    rect(ctx, '#1e293b', x - Math.max(1, h * 0.012), groundY - h, Math.max(2, h * 0.024), h);
+    rect(ctx, '#1e293b', x - h * 0.14, groundY - h * 0.86, h * 0.28, Math.max(1, h * 0.02));
+  }
+  ctx.strokeStyle = '#0f172a';
+  ctx.lineWidth = Math.max(1, h * 0.008);
+  for (let w = 0; w < 3; w++) {
+    const y = groundY - h * 0.84 + w * h * 0.03;
+    ctx.beginPath(); ctx.moveTo(x1, y); ctx.quadraticCurveTo((x1 + x2) / 2, y + h * 0.04, x2, y); ctx.stroke();
+  }
+  for (let i = 0; i < 3; i++) circle(ctx, '#0f172a', x1 + (x2 - x1) * (0.28 + i * 0.18), groundY - h * 0.83, Math.max(1, h * 0.01));
+}
+
+function drawWallPhone(ctx, x, y, s, color = '#ef4444') {
+  roundRect(ctx, '#e2e8f0', x, y, s * 0.9, s * 1.4, s * 0.1);
+  rect(ctx, color, x + s * 0.14, y + s * 0.12, s * 0.62, s * 0.36);
+  circle(ctx, '#0f172a', x + s * 0.3, y + s * 0.9, s * 0.07);
+  ctx.strokeStyle = '#0f172a';
+  ctx.lineWidth = Math.max(1, s * 0.05);
+  ctx.beginPath(); ctx.moveTo(x + s * 0.82, y + s * 1.2); ctx.bezierCurveTo(x + s * 1.5, y + s * 1.5, x + s * 1.1, y + s * 2.1, x + s * 0.5, y + s * 1.9); ctx.stroke();
+}
+
+function drawDeskPhone(ctx, x, y, s) {
+  roundRect(ctx, '#1e293b', x, y, s * 1.2, s * 0.5, s * 0.08);
+  roundRect(ctx, '#e2e8f0', x + s * 0.05, y - s * 0.2, s * 1.1, s * 0.22, s * 0.07);
+  for (let i = 0; i < 4; i++) circle(ctx, '#94a3b8', x + s * (0.2 + i * 0.2), y + s * 0.33, s * 0.05);
+}
+
+function drawACUnit(ctx, x, y, w, h) {
+  roundRect(ctx, '#94a3b8', x, y, w, h, Math.max(1, h * 0.14));
+  ctx.strokeStyle = '#475569';
+  ctx.lineWidth = Math.max(1, h * 0.05);
+  for (let i = 0; i < 3; i++) {
+    ctx.beginPath(); ctx.moveTo(x + w * 0.1, y + h * (0.28 + i * 0.2)); ctx.lineTo(x + w * 0.7, y + h * (0.28 + i * 0.2)); ctx.stroke();
+  }
+  circle(ctx, '#334155', x + w * 0.85, y + h * 0.5, h * 0.22);
+}
+
+function drawPipeRun(ctx, x, y, w, h) {
+  rect(ctx, '#64748b', x, y, w, h);
+  rect(ctx, '#94a3b8', x, y, w, Math.max(1, h * 0.28));
+  for (let i = 1; i < 6; i++) rect(ctx, '#334155', x + w * (i / 6), y, Math.max(1, w * 0.012), h);
+}
+
+function drawCrate(ctx, x, ground, w, h) {
+  rect(ctx, '#78350f', x, ground - h, w, h);
+  rect(ctx, '#a16207', x, ground - h, w, Math.max(1, h * 0.1));
+  ctx.strokeStyle = '#451a03';
+  ctx.lineWidth = Math.max(1, w * 0.03);
+  ctx.beginPath(); ctx.moveTo(x, ground - h); ctx.lineTo(x + w, ground); ctx.moveTo(x + w, ground - h); ctx.lineTo(x, ground); ctx.stroke();
+}
+
+function drawLockers(ctx, x, ground, w, h, count = 3, color = '#2563eb') {
+  const lw = w / count;
+  for (let i = 0; i < count; i++) {
+    rect(ctx, color, x + i * lw, ground - h, lw - 2, h);
+    rect(ctx, 'rgba(255,255,255,0.14)', x + i * lw, ground - h, lw * 0.22, h);
+    for (let v = 0; v < 3; v++) rect(ctx, '#0f172a', x + i * lw + lw * 0.26, ground - h * 0.86 + v * h * 0.09, lw * 0.4, Math.max(1, h * 0.02));
+    circle(ctx, '#e2e8f0', x + i * lw + lw * 0.8, ground - h * 0.5, Math.max(1, lw * 0.07));
+  }
+  const jx = x + lw * 0.2;
+  poly(ctx, '#ef4444', [[jx, ground - h * 0.95], [jx + lw * 0.6, ground - h * 0.95], [jx + lw * 0.5, ground - h * 0.45], [jx + lw * 0.1, ground - h * 0.45]]);
+}
+
+function drawPictureFrame(ctx, x, y, w, h, tilt = 0) {
+  ctx.save();
+  ctx.translate(x + w / 2, y + h / 2);
+  ctx.rotate(tilt);
+  rect(ctx, '#78350f', -w / 2, -h / 2, w, h);
+  rect(ctx, '#93c5fd', -w / 2 + w * 0.09, -h / 2 + h * 0.09, w * 0.82, h * 0.82);
+  poly(ctx, '#64748b', [[-w * 0.3, h * 0.3], [0, -h * 0.12], [w * 0.3, h * 0.3]]);
+  ctx.restore();
+}
+
+function drawWallClock(ctx, x, y, r) {
+  circle(ctx, '#0f172a', x, y, r);
+  circle(ctx, '#f8fafc', x, y, r * 0.86);
+  ctx.strokeStyle = '#0f172a';
+  ctx.lineWidth = Math.max(1, r * 0.14);
+  ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y - r * 0.52); ctx.moveTo(x, y); ctx.lineTo(x + r * 0.38, y); ctx.stroke();
+}
+
+function drawChairWithClothes(ctx, x, ground, h) {
+  rect(ctx, '#475569', x, ground - h * 0.55, h * 0.5, Math.max(1, h * 0.06));
+  rect(ctx, '#334155', x + h * 0.02, ground - h * 0.55, Math.max(1, h * 0.04), h * 0.55);
+  rect(ctx, '#334155', x + h * 0.42, ground - h * 0.55, Math.max(1, h * 0.04), h * 0.55);
+  rect(ctx, '#475569', x + h * 0.44, ground - h, Math.max(1, h * 0.06), h * 0.5);
+  poly(ctx, '#ef4444', [[x + h * 0.02, ground - h * 0.5], [x + h * 0.5, ground - h * 0.5], [x + h * 0.44, ground - h * 0.12], [x + h * 0.08, ground - h * 0.12]]);
+  poly(ctx, '#3b82f6', [[x + h * 0.06, ground - h * 0.98], [x + h * 0.46, ground - h * 0.98], [x + h * 0.4, ground - h * 0.6], [x + h * 0.12, ground - h * 0.6]]);
+}
+
 /**
  * Draw a rich atmospheric background filling W x H.
  * `t` is local scene time in seconds, used for ambient motion (TV flicker, sirens, clouds, fog).
@@ -251,6 +543,12 @@ export function drawBackground(ctx, name, W, H, t = 0) {
       poly(ctx, '#312e81', [[wx - 8, wy - 6], [wx + ww * 0.18, wy - 6], [wx + ww * 0.08, wy + wh + 4], [wx - 8, wy + wh + 4]]);
       poly(ctx, '#312e81', [[wx + ww + 8, wy - 6], [wx + ww * 0.82, wy - 6], [wx + ww * 0.92, wy + wh + 4], [wx + ww + 8, wy + wh + 4]]);
 
+      // Wall dressing: framed pictures and a clock, so the room reads as lived in.
+      drawPictureFrame(ctx, W * 0.09, H * 0.17, W * 0.09, H * 0.11, -0.05);
+      drawPictureFrame(ctx, W * 0.21, H * 0.2, W * 0.07, H * 0.09, 0.06);
+      drawWallClock(ctx, W * 0.36, H * 0.15, Math.min(W, H) * 0.035);
+      drawWallPhone(ctx, W * 0.86, H * 0.22, Math.min(W, H) * 0.04, '#2563eb');
+
       // Bed on left side
       const bedroom = bedroomLayout(W, H);
       const bx = bedroom.bed.x, bw = bedroom.bed.w, bedTop = bedroom.bed.mattressY + H * 0.01;
@@ -259,6 +557,15 @@ export function drawBackground(ctx, name, W, H, t = 0) {
       roundRect(ctx, '#e2e8f0', bx + W * 0.03, bedTop - H * 0.01, bw - W * 0.03, H * 0.06, 6); // mattress
       roundRect(ctx, '#f8fafc', bx + bw * 0.035, bedTop - H * 0.045, bw * 0.25, H * 0.04, 8); // pillow
       roundRect(ctx, '#2563eb', bx + bw * 0.29, bedTop - H * 0.008, bw * 0.71, H * 0.065, 6); // blanket
+
+      // Phone charging on the mattress, dumped clothes and slippers on the floor.
+      roundRect(ctx, '#0f172a', bx + bw * 0.7, bedTop - H * 0.02, W * 0.018, H * 0.035, W * 0.004);
+      rect(ctx, '#38bdf8', bx + bw * 0.706, bedTop - H * 0.014, W * 0.006, H * 0.02);
+      ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = Math.max(1, W * 0.002);
+      ctx.beginPath(); ctx.moveTo(bx + bw * 0.718, bedTop - H * 0.002); ctx.quadraticCurveTo(bx + bw * 0.78, bedTop + H * 0.02, bx + bw * 0.74, groundY - H * 0.01); ctx.stroke();
+      drawChairWithClothes(ctx, W * 0.62, groundY + (H - groundY) * 0.06, H * 0.2);
+      poly(ctx, '#f472b6', [[W * 0.3, groundY + (H - groundY) * 0.3], [W * 0.36, groundY + (H - groundY) * 0.26], [W * 0.37, groundY + (H - groundY) * 0.34], [W * 0.31, groundY + (H - groundY) * 0.38]]);
+      poly(ctx, '#e2e8f0', [[W * 0.46, groundY + (H - groundY) * 0.34], [W * 0.53, groundY + (H - groundY) * 0.32], [W * 0.52, groundY + (H - groundY) * 0.4], [W * 0.47, groundY + (H - groundY) * 0.42]]);
 
       // TV Stand & Wide-screen TV on right side (Emergency Broadcast!)
       const { x: tx, w: tw, y: ty, h: th } = bedroom.tv;
@@ -302,6 +609,18 @@ export function drawBackground(ctx, name, W, H, t = 0) {
           }
         }
       }
+
+      // Houses waiting behind the shopfronts, each with its own lit door and windows.
+      for (let i = 0; i < 3; i++) {
+        const hw = W * 0.26;
+        drawHouse(ctx, W * (0.02 + i * 0.33), groundY - H * 0.18, hw, H * 0.26, {
+          wall: i % 2 ? '#b8c4c9' : '#cbbfae',
+          roof: i % 2 ? '#7f1d1d' : '#3f3f46',
+          mailbox: i === 0,
+          fence: i === 2,
+        });
+      }
+      drawPowerLine(ctx, W * 0.02, W * 0.98, groundY - H * 0.18, H * 0.36);
 
       // Sidewalk & Asphalt road
       rect(ctx, '#334155', 0, groundY - 12, W, 12);
@@ -349,6 +668,10 @@ export function drawBackground(ctx, name, W, H, t = 0) {
           }
         }
       }
+      // Apartment blocks with balconies, laundry and glass ground-floor doors.
+      drawApartmentBlock(ctx, W * 0.01, groundY - H * 0.14, W * 0.22, H * 0.42, rnd);
+      drawApartmentBlock(ctx, W * 0.76, groundY - H * 0.16, W * 0.23, H * 0.46, rnd, { body: '#131c31' });
+      drawPowerLine(ctx, W * 0.2, W * 0.8, groundY - H * 0.3, H * 0.34);
       rect(ctx, '#0f172a', 0, groundY, W, H - groundY);
       rect(ctx, '#38bdf8', 0, groundY, W, 2);
       break;
@@ -367,10 +690,12 @@ export function drawBackground(ctx, name, W, H, t = 0) {
       ctx.moveTo(W * 0.2, H * 0.2); ctx.lineTo(W * 0.42, H * 0.2);
       ctx.moveTo(W * 0.2, H * 0.26); ctx.lineTo(W * 0.36, H * 0.26);
       ctx.stroke();
-      // Lockers on left
-      for (let i = 0; i < 3; i++) {
-        rect(ctx, '#2563eb', W * 0.02 + i * (W * 0.035), groundY - H * 0.32, W * 0.032, H * 0.32);
-      }
+      // Lockers, a hanging jacket, posters and the classroom door.
+      drawLockers(ctx, W * 0.02, groundY, W * 0.15, H * 0.3, 3);
+      drawPictureFrame(ctx, W * 0.2, H * 0.36, W * 0.07, H * 0.09, -0.03);
+      drawWallClock(ctx, W * 0.9, H * 0.2, Math.min(W, H) * 0.035);
+      drawDoor(ctx, W * 0.76, groundY - H * 0.4, W * 0.14, H * 0.4, { style: 'glass' });
+      drawBin(ctx, W * 0.7, groundY, H * 0.11);
       rect(ctx, vGrad(ctx, groundY, H, [[0, '#b45309'], [1, '#78350f']]), 0, groundY, W, H - groundY);
       break;
     }
@@ -387,10 +712,15 @@ export function drawBackground(ctx, name, W, H, t = 0) {
       rect(ctx, '#22c55e', W * 0.61, H * 0.26, W * 0.04, H * 0.07);
       rect(ctx, '#3b82f6', W * 0.67, H * 0.22, W * 0.04, H * 0.11);
       rect(ctx, '#ef4444', W * 0.73, H * 0.18, W * 0.04, H * 0.15);
-      // Desk
+      // Desk with a landline phone and monitor, a glass office door and a coat rack.
       rect(ctx, '#475569', W * 0.55, groundY - H * 0.14, W * 0.36, 10);
       rect(ctx, '#334155', W * 0.58, groundY - H * 0.14, 8, H * 0.14);
       rect(ctx, '#334155', W * 0.86, groundY - H * 0.14, 8, H * 0.14);
+      drawDeskPhone(ctx, W * 0.62, groundY - H * 0.15, W * 0.035);
+      rect(ctx, '#0f172a', W * 0.72, groundY - H * 0.26, W * 0.16, H * 0.11);
+      rect(ctx, '#38bdf8', W * 0.725, groundY - H * 0.255, W * 0.15, H * 0.1);
+      drawDoor(ctx, W * 0.01, groundY - H * 0.38, W * 0.1, H * 0.38, { style: 'glass' });
+      drawChairWithClothes(ctx, W * 0.46, groundY, H * 0.24);
       rect(ctx, '#94a3b8', 0, groundY, W, H - groundY);
       break;
     }
@@ -412,6 +742,11 @@ export function drawBackground(ctx, name, W, H, t = 0) {
         poly(ctx, '#114232', [[x - W * 0.075, groundY - H * 0.05], [x, groundY - th], [x + W * 0.075, groundY - H * 0.05]]);
         poly(ctx, '#175943', [[x - W * 0.06, groundY - H * 0.14], [x, groundY - th * 1.06], [x + W * 0.06, groundY - H * 0.14]]);
       }
+      // A cabin with a door, a lit window and washing strung between the trees.
+      drawHouse(ctx, W * 0.6, groundY - H * 0.04, W * 0.32, H * 0.24, { wall: '#6b4f3a', roof: '#3f2a1d', light: 'warm' });
+      rect(ctx, '#3f2718', W * 0.3, H * 0.3, Math.max(2, W * 0.008), groundY - H * 0.3);
+      drawClothesline(ctx, W * 0.06, H * 0.34, W * 0.3, H * 0.36, 4, rnd, H * 0.08);
+      drawBench(ctx, W * 0.42, groundY, W * 0.14, H * 0.1);
       rect(ctx, vGrad(ctx, groundY, H, [[0, '#143829'], [1, '#091c14']]), 0, groundY, W, H - groundY);
       break;
     }
@@ -422,6 +757,9 @@ export function drawBackground(ctx, name, W, H, t = 0) {
       poly(ctx, '#d97706', [[0, groundY], [W * 0.32, groundY - H * 0.15], [W * 0.68, groundY]]);
       poly(ctx, '#b45309', [[W * 0.38, groundY], [W * 0.78, groundY - H * 0.12], [W, groundY]]);
       rect(ctx, vGrad(ctx, groundY, H, [[0, '#f59e0b'], [1, '#b45309']]), 0, groundY, W, H - groundY);
+      // An abandoned shack with a door, plus a phone pole and its wires.
+      drawHouse(ctx, W * 0.04, groundY, W * 0.3, H * 0.2, { wall: '#d6b985', roof: '#8b5a2b', light: 'warm' });
+      drawPowerLine(ctx, W * 0.86, W * 0.98, groundY, H * 0.3);
       // Cacti
       for (const cx of [W * 0.14, W * 0.86]) {
         roundRect(ctx, '#15803d', cx - 6, groundY - H * 0.16, 12, H * 0.16, 5);
@@ -435,6 +773,20 @@ export function drawBackground(ctx, name, W, H, t = 0) {
 
     case 'battlefield': {
       rect(ctx, vGrad(ctx, 0, groundY, [[0, '#1c1917'], [0.6, '#44403c'], [1, '#7c2d12']]), 0, 0, W, groundY);
+      // Broken houses with steel doorways, lit windows, sandbags and wire along the line.
+      for (let i = 0; i < 3; i++) {
+        const bx = W * (0.06 + i * 0.32);
+        const bh = H * 0.2;
+        rect(ctx, '#3f3a36', bx, groundY - bh, W * 0.16, bh);
+        rect(ctx, '#57534e', bx, groundY - bh, W * 0.16, Math.max(1, H * 0.012));
+        drawWindow(ctx, bx + W * 0.02, groundY - bh * 0.84, W * 0.05, H * 0.055, { light: 'cool', blinds: true });
+        drawDoor(ctx, bx + W * 0.085, groundY - bh * 0.9, W * 0.06, bh * 0.9, { style: 'steel' });
+        poly(ctx, '#1c1917', [[bx - W * 0.01, groundY - bh], [bx + W * 0.05, groundY - bh * 1.4], [bx + W * 0.12, groundY - bh * 0.92], [bx + W * 0.17, groundY - bh * 1.25], [bx + W * 0.17, groundY - bh]]);
+      }
+      for (let i = 0; i < 12; i++) {
+        circle(ctx, '#78716c', W * (0.04 + i * 0.08), groundY - H * 0.03 - (i % 2) * H * 0.016, H * 0.024);
+        circle(ctx, '#57534e', W * (0.04 + i * 0.08), groundY - H * 0.03 - (i % 2) * H * 0.016, H * 0.018);
+      }
       // Distant fire glow & rising smoke plumes
       for (let i = 0; i < 6; i++) {
         const sx = W * (0.1 + 0.16 * i);
@@ -469,6 +821,10 @@ export function drawBackground(ctx, name, W, H, t = 0) {
         ctx.moveTo(x, groundY - H * 0.18); ctx.lineTo(x + 24, groundY - H * 0.27);
         ctx.stroke();
       }
+      // The house at the end of the road: porch, door and a fence leaning in the fog.
+      drawHouse(ctx, W * 0.56, groundY - H * 0.02, W * 0.38, H * 0.3, { wall: '#1f2937', roof: '#111827', fence: true, light: 'cool' });
+      drawFence(ctx, W * 0.02, groundY, W * 0.28, H * 0.14);
+      drawPowerLine(ctx, W * 0.08, W * 0.92, groundY, H * 0.42);
       // Rolling toxic green ground fog
       const fogShift = Math.sin(t * 1.5) * 8;
       rect(ctx, 'rgba(74,222,128,0.12)', 0, groundY - H * 0.09 + fogShift, W, H * 0.1);
@@ -481,6 +837,12 @@ export function drawBackground(ctx, name, W, H, t = 0) {
       circle(ctx, '#fef08a', W * 0.22, H * 0.16, Math.min(W, H) * 0.06);
       poly(ctx, '#16a34a', [[0, groundY], [W * 0.35, groundY - H * 0.22], [W * 0.72, groundY]]);
       poly(ctx, '#15803d', [[W * 0.36, groundY], [W * 0.78, groundY - H * 0.18], [W, groundY]]);
+      // Farmhouse and barn with doors, a fence and a washing line.
+      drawHouse(ctx, W * 0.58, groundY, W * 0.34, H * 0.28, { wall: '#e7d8b8', roof: '#7f1d1d', fence: true, mailbox: true });
+      rect(ctx, '#8b5e34', W * 0.05, groundY - H * 0.2, W * 0.2, H * 0.2);
+      poly(ctx, '#5b3a1f', [[W * 0.04, groundY - H * 0.2], [W * 0.15, groundY - H * 0.29], [W * 0.26, groundY - H * 0.2]]);
+      drawDoor(ctx, W * 0.11, groundY - H * 0.14, W * 0.07, H * 0.14);
+      drawFence(ctx, W * 0.3, groundY, W * 0.26, H * 0.12);
       rect(ctx, vGrad(ctx, groundY, H, [[0, '#22c55e'], [1, '#15803d']]), 0, groundY, W, H - groundY);
       break;
     }
@@ -493,10 +855,13 @@ export function drawBackground(ctx, name, W, H, t = 0) {
         const bh = H * (0.2 + rnd() * 0.25);
         rect(ctx, '#0f172a', i * (W / 7.5), groundY - bh, bw, bh);
       }
-      // Concrete roof ledge & AC unit
+      // Concrete roof ledge, stairwell door, pipes, AC unit, antenna and laundry.
       rect(ctx, '#334155', 0, groundY - 14, W, 14);
       rect(ctx, '#1e293b', 0, groundY, W, H - groundY);
-      roundRect(ctx, '#475569', W * 0.08, groundY - H * 0.14, W * 0.16, H * 0.14, 4);
+      drawDoor(ctx, W * 0.72, groundY - H * 0.34, W * 0.16, H * 0.34, { style: 'steel' });
+      drawPipeRun(ctx, 0, groundY - H * 0.08, W, Math.max(2, H * 0.016));
+      drawACUnit(ctx, W * 0.08, groundY - H * 0.16, W * 0.16, H * 0.1);
+      drawBench(ctx, W * 0.28, groundY - H * 0.02, W * 0.14, H * 0.1);
       break;
     }
 
@@ -510,6 +875,12 @@ export function drawBackground(ctx, name, W, H, t = 0) {
         ctx.beginPath(); ctx.moveTo((W * i) / 5, 0); ctx.lineTo((W * i) / 5, groundY); ctx.stroke();
       }
       rect(ctx, '#eab308', 0, groundY - 14, W, 14);
+      // Blast door, lockers with clothes, a wall phone, pipes and crates.
+      drawDoor(ctx, W * 0.05, groundY - H * 0.42, W * 0.22, H * 0.42, { style: 'steel' });
+      drawLockers(ctx, W * 0.74, groundY, W * 0.22, H * 0.28, 3, g === 'lab' ? '#0e7490' : '#334155');
+      drawPipeRun(ctx, 0, H * 0.07, W, Math.max(2, H * 0.02));
+      drawWallPhone(ctx, W * 0.6, H * 0.2, Math.min(W, H) * 0.038, '#ef4444');
+      drawCrate(ctx, W * 0.3, groundY, W * 0.1, H * 0.11);
       // Biohazard / containment tube in lab
       if (g === 'lab') {
         roundRect(ctx, 'rgba(74,222,128,0.22)', W * 0.42, H * 0.14, W * 0.16, H * 0.48, 12);
@@ -561,6 +932,11 @@ function drawScenicFinish(ctx, name, W, H, ground, t) {
         const x = rnd() * W, y = ground + rnd() * (H - ground);
         rect(ctx, i % 3 ? 'rgba(116,173,198,0.13)' : 'rgba(244,191,112,0.25)', x, y, unit * (0.008 + rnd() * 0.075), Math.max(0.6, unit * 0.002));
       }
+      // Foreground street furniture: bins, a hydrant, a bench and a parked car.
+      drawBin(ctx, W * 0.025, ground, unit * 0.1);
+      drawHydrant(ctx, W * 0.13, ground, unit * 0.11);
+      drawBench(ctx, W * 0.55, ground, W * 0.15, unit * 0.12);
+      drawCar(ctx, W * 0.74, ground, W * 0.23, name === 'city' ? '#facc15' : '#dc2626');
       for (const x of [W * 0.18, W * 0.52, W * 0.86]) {
         const y = ground - H * 0.32;
         rect(ctx, '#28394c', x - unit * 0.005, y, unit * 0.01, H * 0.32);
