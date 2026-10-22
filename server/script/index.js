@@ -13,7 +13,10 @@ export function instantProject(req) {
 }
 
 function planText(project) {
-  return project.scenes.map((s, i) => `Scene ${i + 1} (${s.duration}s): ${s.purpose}\nAction: ${s.action}\nCamera: ${s.camera}, ${s.cameraMotion}. ${s.shotDescription}\nContinuity: ${s.continuity}\nNarration: ${s.narration}`).join('\n\n');
+  const cast = project.characters.map((c) => `${c.name} (${c.role})`).join(', ');
+  const header = `${project.title} — ${project.tone} story, ${project.duration}s, ${project.scenes.length} scenes.\nCast: ${cast}.`;
+  const scenes = project.scenes.map((s, i) => `Scene ${i + 1} (${Math.round(s.duration * 10) / 10}s) — ${s.purpose}\nAction: ${s.action}\nCamera: ${s.camera}, ${s.cameraMotion}. ${s.shotDescription}\nContinuity: ${s.continuity}\nNarration: ${s.narration}`).join('\n\n');
+  return `${header}\n\n${scenes}`;
 }
 
 const modelReady = (llm) => Boolean(llm && typeof llm.enabled === 'function' && llm.enabled());
