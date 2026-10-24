@@ -1,5 +1,5 @@
 // Samples drawings per class from the public Quick, Draw! bucket (no credentials needed).
-// Usage: node scripts/fetch-quickdraw.mjs [perClass=300] [outDir=tmp/quickdraw]
+// Usage: node scripts/fetch-quickdraw.mjs [perClass=1000] [outDir=tmp/quickdraw]
 // Each class is stored as <outDir>/<slug>.json: an array of { word, drawing } entries.
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -56,7 +56,7 @@ export async function sampleClass(file, perClass, fetchImpl = fetch) {
 }
 
 async function main() {
-  const perClass = Number(process.argv[2] || 300);
+  const perClass = Number(process.argv[2] || 1000);
   const outDir = path.resolve(process.argv[3] || 'tmp/quickdraw');
   await mkdir(outDir, { recursive: true });
   const classes = await listClassFiles();
