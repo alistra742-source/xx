@@ -250,7 +250,7 @@ export default function App() {
             <div className="row">
               <label>Duration
                 <select value={form.duration} onChange={(e) => setField('duration', Number(e.target.value))}>
-                  {[15, 20, 30, 45, 60].map((d) => <option key={d} value={d}>{d} s</option>)}
+                  {[15, 20, 30, 45, 60, 120, 240].map((d) => <option key={d} value={d}>{d} s</option>)}
                 </select>
               </label>
               <label>Story vibe

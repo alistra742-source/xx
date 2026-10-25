@@ -109,11 +109,11 @@ export const FPS_OPTIONS = [12, 24, 30];
 
 export const LIMITS = {
   minDuration: 10,
-  maxDuration: 90,
+  maxDuration: 240,
   defaultDuration: 30,
-  durationChoices: [15, 30, 45, 60],
+  durationChoices: [15, 30, 45, 60, 120, 240],
   minScenes: 1,
-  maxScenes: 12,
+  maxScenes: 48,
   minSceneSeconds: 1.5,
   maxSceneSeconds: 15,
   maxCharacters: 8,

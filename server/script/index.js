@@ -6,6 +6,7 @@
 import { improvePromptLocally } from './llm.js';
 import { normalizeProject } from '../../shared/schema.js';
 import { writeInstantStory } from './instant.js';
+import { isDavidTopic } from '../../shared/david-story.js';
 
 /** Storyboard from the built-in writer — no model, no network, no account. */
 export function instantProject(req) {
@@ -23,7 +24,7 @@ const modelReady = (llm) => Boolean(llm && typeof llm.enabled === 'function' && 
 
 export function createScriptService({ llm }) {
   return async function generateScript(req) {
-    if (modelReady(llm)) return llm.generateScript(req);
+    if (modelReady(llm) && !isDavidTopic(req.topic)) return llm.generateScript(req);
     return { project: instantProject(req), source: 'instant' };
   };
 }

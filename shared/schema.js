@@ -257,6 +257,7 @@ function normalizeScene(raw, index, characters, warnings) {
     shotDescription: str(scene.shotDescription ?? scene.direction?.shotDescription, 1200),
     continuity: str(scene.continuity ?? scene.direction?.continuity, 1600),
     choice: normalizeChoice(scene.choice),
+    endsStory: scene.endsStory === true,
   };
 }
 

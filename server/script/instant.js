@@ -1,3 +1,5 @@
+import { davidStory, isDavidTopic } from '../../shared/david-story.js';
+
 // Built-in story writer — the studio's no-model, no-key fallback.
 //
 // It reads the prompt, works out what kind of story it is (war, outbreak, heist,
@@ -1032,6 +1034,7 @@ function sceneCharacters(beat, cast) {
 
 /** Builds a complete project from the prompt with no model and no network. */
 export function writeInstantStory(req) {
+  if (isDavidTopic(req.topic)) return { ...davidStory(req.duration), duration: req.duration };
   const premise = readPremise(req.topic);
   const arc = premise.literalVerb ? literalArc(premise, req) : (ARCS[premise.genre] || everydayArc)(premise, req);
   const count = sceneCountFor(req.duration);

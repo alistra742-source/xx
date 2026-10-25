@@ -8,6 +8,7 @@ export function playbackOrder(scenes, picks = {}, limit = scenes.length * 2) {
   let i = 0;
   while (i >= 0 && i < scenes.length && order.length < limit) {
     order.push(i);
+    if (scenes[i].endsStory) break;
     const choice = scenes[i].choice;
     if (choice && choice.options?.length >= 2) {
       const picked = picks[i];
