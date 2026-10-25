@@ -258,7 +258,17 @@ function normalizeScene(raw, index, characters, warnings) {
     continuity: str(scene.continuity ?? scene.direction?.continuity, 1600),
     choice: normalizeChoice(scene.choice),
     endsStory: scene.endsStory === true,
+    props: normalizeProps(scene.props),
   };
+}
+
+/** Named cartoon props placed in a scene; unknown names are dropped. */
+function normalizeProps(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((p) => PROP_NAMES.includes(p?.name))
+    .slice(0, 4)
+    .map((p) => ({ name: p.name, x: clamp(num(p.x, 0.5), 0, 1), y: clamp(num(p.y, 0.8), 0, 1), scale: clamp(num(p.scale, 1), 0.3, 2) }));
 }
 
 /** A viewer decision at the end of a scene: 2-3 labelled options, each jumping to a scene index. */
@@ -312,6 +322,8 @@ export function inferStoryMeta(topic = '') {
  * Normalize arbitrary project-like JSON into a safe project.
  * Throws ValidationError only when no usable scenes exist (callers then fall back).
  */
+const PROP_NAMES = ['door', 'shop'];
+
 export function normalizeProject(raw, defaults = {}) {
   const warnings = [];
   const src = raw && typeof raw === 'object' ? raw : {};

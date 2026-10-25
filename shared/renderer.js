@@ -4,6 +4,7 @@
 // transformations, props, and dynamic effects.
 import { solvePose, buildSkeleton } from './stickfigure.js';
 import { drawBackground, drawScenery, drawTint, BACKGROUND_INFO, bedroomLayout } from './scenery.js';
+import { drawCartoonProp } from './props.js';
 import { ZOMBIE_COLOR, ZOMBIE_GLOW } from './constants.js';
 
 const TWO_PI = Math.PI * 2;
@@ -1262,6 +1263,8 @@ export function renderFrame(ctx, scene, t, opts) {
   // Background and actors share the same transform, preserving prop alignment.
   if (scene.scenery) drawScenery(ctx, scene.scenery, W, H);
   else drawBackground(ctx, scene.background, W, H, local);
+  // Props sit on the floor line behind the actors. A scene lists them by name.
+  for (const p of scene.props || []) drawCartoonProp(ctx, p.name, p.x * W, p.y * H, p.scale ?? 1);
   if (effects.includes('night')) drawTint(ctx, W, H, 'rgba(8,15,45,0.32)');
   if (effects.includes('day')) drawTint(ctx, W, H, 'rgba(255,230,160,0.08)');
   if (effects.includes('alarm_flash')) drawTint(ctx, W, H, `rgba(220,38,38,${0.14 + 0.14 * Math.sin(local * 9)})`);

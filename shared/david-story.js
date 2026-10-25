@@ -53,7 +53,7 @@ function storyboard(duration, scenes) {
 const INTRO = [
   scene(6, 'bedroom', 'David checks his bank app', 'think', 'David has ten dollars, thirty days, and a goal of ten million.'),
   scene(7, 'street', 'David walks to a junkyard shop', 'walk', 'His first move is a junkyard shop on the edge of town.'),
-  scene(7, 'shop', 'David buys a mystery box', 'celebrate', 'For ten dollars he buys a mystery box. Inside he finds a gold watch, a vintage camera and a silver bracelet.'),
+  scene(7, 'shop', 'David buys a mystery box', 'celebrate', 'For ten dollars he buys a mystery box. Inside he finds a gold watch, a vintage camera and a silver bracelet.', { props: [{ name: 'shop', x: 0.5, y: 0.8, scale: 1 }] }),
   scene(7, 'shop', 'David appraises the finds', 'surprised', 'A pawn dealer values the haul at over twenty-five hundred dollars.'),
 ];
 
